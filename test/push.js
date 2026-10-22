@@ -70,8 +70,10 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
   console.log('--- the functions that are deployed ---');
   {
     const S = server();
-    deepEq('three triggers, one per thing that is news', Object.keys(S.triggers).filter(n => S.triggers[n].kind === 'created' && /^push/.test(n)).sort(), ['pushMessage', 'pushNotice', 'pushStaffMessage']);
+    deepEq('four triggers, one per thing that is news', Object.keys(S.triggers).filter(n => S.triggers[n].kind === 'created' && /^push/.test(n)).sort(), ['pushMessage', 'pushNotice', 'pushStaffMessage', 'pushTalkMessage']);
     check('a message between colleagues wakes its sender', S.woken('staffdm/CLUB/coach~other/m/s1').join(), 'pushStaffMessage');
+    check('a message between two people keyed by their accounts wakes its own (DOORS.md)', S.woken('talk/CLUB/coach~mum/m/t1').join(), 'pushTalkMessage');
+    check('— its markers wake nothing', S.woken('talk/CLUB/coach~mum/got/mum').length + S.woken('talk/CLUB/coach~mum/seen/mum').length, 0);
     check('its markers wake nothing', S.woken('staffdm/CLUB/coach~other/got/other').length + S.woken('staffdm/CLUB/coach~other/seen/other').length, 0);
     check('a new notice wakes the notice sender', S.woken('board/CLUB/t1/n1').join(), 'pushNotice');
     check('a new family message wakes the message sender', S.woken('dm/CLUB/t1/mum/m/x1').join(), 'pushMessage');
@@ -139,8 +141,8 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     const m = toUid(S, 'other')[0];
     check('titled with who wrote it', m.data.title, 'Jaz');
     check('opening the conversation with her', m.data.hash, '#/messages/with/coach');
-    const reads = S.reads.filter(p => !/^((workspaces|orgs)\/CLUB\/access\/(admins|coachIndex|index)$|retired\/CLUB$|pushTokens\/other$|people\/other\/mute\/msg$)/.test(p));
-    deepEq('it read the two tables, her switch for messages, and her phones, nothing else', reads, []);
+    const reads = S.reads.filter(p => !/^((workspaces|orgs)\/CLUB\/access\/(admins|coachIndex|sessionCoaches|index)$|retired\/CLUB$|pushTokens\/other$|people\/other\/mute\/msg$)/.test(p));
+    deepEq('it read the three tables, her switch for messages, and her phones, nothing else', reads, []);
   }
   {
     const S = server();
@@ -165,6 +167,65 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     await S.fire('workspaces/CLUB/access/coachIndex/other', null);
     const r = await S.fire('staffdm/CLUB/coach~other/m/s4', { by: 'coach', byName: 'Jaz', at: 5, text: 'still there?' });
     check('nobody, once the other is no longer staff', r.pushStaffMessage.to.length + S.sent().length, 0);
+  }
+
+  console.log('\n--- two people, keyed by their accounts (talk/, DOORS.md): who hears it ---');
+  {
+    const S = server();
+    const r = await S.fire('talk/CLUB/coach~mum/m/t1', { by: 'coach', byName: 'Jaz', at: 5, text: 'Rosa did well tonight' });
+    deepEq('the family, and nobody else', r.pushTalkMessage.to, ['mum']);
+    deepEq('those are the only phones sent to', owners(S), ['mum']);
+    check('not the admins, who read it but are not told', toUid(S, 'adm').length, 0);
+    const m = toUid(S, 'mum')[0];
+    check('titled with who wrote it, opening the conversation with her', m.data.title + ' ' + m.data.hash, 'Jaz #/messages/with/coach');
+    const reads = S.reads.filter(p => !/^((workspaces|orgs)\/CLUB\/access\/(admins|coachIndex|helperIndex|sessionCoaches|playerIndex|index)$|retired\/CLUB$|pushTokens\/mum$|people\/mum\/mute\/msg$)/.test(p));
+    deepEq('it read the six tables, her switch for messages, and her phones, nothing else', reads, []);
+    // a player's own sign-in is never in one (playerIndex, rules version 36): nobody is told
+    const S3 = server();
+    await S3.fire('workspaces/CLUB/access/playerIndex/ella', 't1');
+    const r3 = await S3.fire('talk/CLUB/coach~ella/m/t8', { by: 'coach', byName: 'Jaz', at: 5, text: 'hi' });
+    check('a child\'s own sign-in named in the pair: nobody is told', (r3.pushTalkMessage || { to: [] }).to.length + S3.sent().length, 0);
+    // a session coach (DOORS.md, a coach of no team) is staff for this too
+    const S2 = server();
+    await S2.fire('workspaces/CLUB/access/sessionCoaches/gk', true); await S2.fire('workspaces/CLUB/access/index/gk', true);
+    const r2 = await S2.fire('talk/CLUB/gk~mum/m/t9', { by: 'gk', byName: 'Gus', at: 5, text: 'Keeper session Tuesday' });
+    deepEq('a session coach to a family', (r2.pushTalkMessage || {}).to, ['mum']);
+  }
+  {
+    const S = server();
+    const r = await S.fire('talk/CLUB/coach~mum/m/t2', { by: 'mum', byName: 'Mo', at: 5, text: 'Thank you' });
+    deepEq('the family answers: the coach, on both her phones', [r.pushTalkMessage.to, toUid(S, 'coach').length], [['coach'], 2]);
+  }
+  {
+    const S = server();
+    const r = await S.fire('talk/CLUB/adm~dad/m/t3', { by: 'adm', byName: 'Ada', at: 5, text: 'Bea has a place' });
+    deepEq('an admin to a family', r.pushTalkMessage.to, ['dad']);
+  }
+  {
+    // a team helper is staff for this: a conversation with a family is hers to have
+    const S = server();
+    await S.fire('workspaces/CLUB/access/helperIndex/hel', 't1');
+    await S.fire('workspaces/CLUB/access/index/hel', true);
+    const r = await S.fire('talk/CLUB/hel~mum/m/t4', { by: 'hel', byName: 'Hal', at: 5, text: 'Kit for Saturday' });
+    deepEq('a helper to a family', (r.pushTalkMessage || {}).to, ['mum']);
+  }
+  for (const [label, cid, by] of [
+    ['two families are nobody\'s to tell: neither is staff', 'dad~mum', 'mum'],
+    ['nor a tracker and a family', 'mum~trk', 'trk'],
+    ['somebody not in the club', 'coach~rando', 'coach'],
+    ['an author not in the pair sends nothing', 'coach~mum', 'adm'],
+    ['nor a pair of one', 'mum~mum', 'mum'],
+    ['nor three', 'adm~coach~mum', 'adm']
+  ]) {
+    const S = server();
+    const r = await S.fire(`talk/CLUB/${cid}/m/t5`, { by, byName: 'x', at: 5, text: 'hi' });
+    check(label, (r.pushTalkMessage || { to: [] }).to.length + S.sent().length, 0);
+  }
+  {
+    const S = server();
+    await S.fire('workspaces/CLUB/access/coachIndex/coach', null);
+    const r = await S.fire('talk/CLUB/coach~mum/m/t6', { by: 'coach', byName: 'Jaz', at: 5, text: 'still there?' });
+    check('nobody, once the coach is no longer staff: two families', r.pushTalkMessage.to.length + S.sent().length, 0);
   }
 
   console.log('\n--- a family conversation: who hears it ---');

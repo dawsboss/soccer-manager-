@@ -122,6 +122,11 @@ exports.pushMessage = onValueCreated('/dm/{code}/{tid}/{fam}/m/{id}', event =>
 exports.pushStaffMessage = onValueCreated('/staffdm/{code}/{cid}/m/{id}', event =>
   push.onStaff(envOf(event), event.params, event.data.val()));
 
+/* A new message between two people keyed by their accounts (DOORS.md; build
+   180): a session's coach and a family, or an admin and a family. Append-only. */
+exports.pushTalkMessage = onValueCreated('/talk/{code}/{cid}/m/{id}', event =>
+  push.onTalk(envOf(event), event.params, event.data.val()));
+
 /* A practice or event on a team's calendar changed: the entry, before and
    after. Entries are small and nothing writes them during a game (the
    register sits beside them, at teams/{tid}/attend), so the whole entry is
@@ -214,6 +219,11 @@ onClub('accessFans', '{code}/{squad}/{pid}/fans', onValueWritten, event => Promi
    index like any role, so it is kept like one. */
 exports.accessViewer = onValueWritten('/orgs/{code}/access/viewers/{uid}', event =>
   access.onViewer(writerOf(event), event.params, event.data.before.val(), event.data.after.val()));
+
+/* A session coach, a coach of no team (DOORS.md): named by an admin as a
+   viewer is, and kept in the index the same way. */
+exports.accessSessionCoach = onValueWritten('/orgs/{code}/access/sessionCoaches/{uid}', event =>
+  access.onSessionCoach(writerOf(event), event.params, event.data.before.val(), event.data.after.val()));
 
 /* Two derived parts (access.js): staff names, so a family can
    see who her coach is without reading anyone's email, and the roster, the

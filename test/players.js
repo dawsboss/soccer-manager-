@@ -108,6 +108,7 @@ async function boot(who, ws = club(), extra = {}) {
     check('on the team\'s player list, naming herself', valueAt(fbk, 'orgs/CLUB/access/teamPlayers/t1/ella'), 'p1');
     check('record, then index, then the list the rules check against the record',
       at('orgs/CLUB/squad/t1/p1/self/ella') < at('orgs/CLUB/access/index/ella') && at('orgs/CLUB/access/index/ella') < at('orgs/CLUB/access/teamPlayers/t1/ella'), true);
+    check('— then the players\' index, naming her team, which the rule checks against that list (DOORS.md)', valueAt(fbk, 'orgs/CLUB/access/playerIndex/ella') === 't1' && at('orgs/CLUB/access/teamPlayers/t1/ella') < at('orgs/CLUB/access/playerIndex/ella'), true);
     check('not on the parent list', p.some(x => x.includes('/teamParents/')), false);
   }
 
@@ -211,12 +212,13 @@ async function boot(who, ws = club(), extra = {}) {
 
   console.log('\n--- kept true by an admin\'s phone ---');
   {
-    const ws = club(); ws.access.teamPlayers = {};   // written as nothing: serveClub() would derive it
+    const ws = club(); ws.access.teamPlayers = {}; ws.access.playerIndex = {};   // written as nothing: serveClub() would derive them
     const { A, fbk } = await boot('adm', ws);
     await A.flush(10);
     check('she stays in the club\'s index', A.hasAnyRole('ella'), true);
     check('never removed from it', fbk.record.removes.includes('orgs/CLUB/access/index/ella'), false);
     check('the player list is built', valueAt(fbk, 'orgs/CLUB/access/teamPlayers/t1/ella'), 'p1');
+    check('— and the players\' index', valueAt(fbk, 'orgs/CLUB/access/playerIndex/ella'), 't1');
     check('People shows her as a player', A.rolesHeld('ella', A.teams()).map(v => v.r + ':' + (v.p || {}).id).join(), 'player:p1');
   }
 
@@ -230,6 +232,7 @@ async function boot(who, ws = club(), extra = {}) {
     A.click({ act: 'selfdrop', pid: 'p1', uid: 'ella' }); await A.flush(10);
     check('off her player record', fbk.record.removes.includes('orgs/CLUB/squad/t1/p1/self/ella'), true);
     check('off the player list', fbk.record.removes.includes('orgs/CLUB/access/teamPlayers/t1/ella'), true);
+    check('— and off the players\' index', fbk.record.removes.includes('orgs/CLUB/access/playerIndex/ella'), true);
     check('her parents keep theirs', Object.keys(A.state.teams.t1.players.p1.guardians).sort().join(), 'dad,mum');
   }
 

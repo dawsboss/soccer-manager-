@@ -247,7 +247,7 @@ function prune(v) {
    wrote itself is served as written, and one written as {} is not there:
    what a phone does about a missing or stale table is sometimes what a
    suite is checking. */
-const TABLES = ['index', 'teamIndex', 'teamParents', 'teamPlayers', 'teamFans', 'coachIndex', 'helperIndex'];
+const TABLES = ['index', 'teamIndex', 'teamParents', 'teamPlayers', 'teamFans', 'coachIndex', 'helperIndex', 'playerIndex'];
 function asWritten(club) {
   club = JSON.parse(JSON.stringify(club));
   const o = orgsLayout(club), given = (club && club.access) || {};
@@ -286,11 +286,13 @@ function orgsLayout(ws) {
     for (const u of [...keys(p && p.guardians), ...keys(p && p.self)]) everyone.add(u);
   for (const u of everyone) if (okKey(u) && hasRole(f, u) && !has(index, u)) index[u] = true;
   access.index = index;
-  const teamIndex = {}, teamParents = {}, teamPlayers = {}, coachIndex = {};
+  const teamIndex = {}, teamParents = {}, teamPlayers = {}, coachIndex = {}, playerIndex = {};
   for (const tid of keys(rest.teams)) { const w = teamIndexWanted(f, tid); if (keys(w).length) teamIndex[tid] = w; }
   for (const tid of keys(f.teams)) {
     const gp = linkedWanted(f, tid, 'guardians'); if (keys(gp).length) teamParents[tid] = gp;
     const sp = linkedWanted(f, tid, 'self'); if (keys(sp).length) teamPlayers[tid] = sp;
+    // the players' index (DOORS.md; rules version 36): the first team, in order, that lists her own sign-in
+    for (const u of keys(sp)) if (!playerIndex[u]) playerIndex[u] = tid;
   }
   for (const u of everyone) {
     const keep = (rest.coachIndex || {})[u];
@@ -298,7 +300,7 @@ function orgsLayout(ws) {
     const t = ok ? keep : coachTeamOf(f, u);
     if (t) coachIndex[u] = t;
   }
-  Object.assign(access, { teamIndex, teamParents, teamPlayers, coachIndex });
+  Object.assign(access, { teamIndex, teamParents, teamPlayers, coachIndex, playerIndex });
   const names = {};
   for (const u of everyone) {
     const n = members && members[u] && typeof members[u].name === 'string' ? members[u].name.slice(0, 80) : '';

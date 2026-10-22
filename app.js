@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '183';
+const BUILD = '184';
 const BUILT = '2026-10-14';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -11,7 +11,7 @@ const BUILT = '2026-10-14';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 33;
+const RULES_VERSION = 36;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -46,7 +46,7 @@ const SANDBOX_PREFIX = 'test-';
    answering; and the rule that lets a parent write here grants this node and
    nothing else, so a parent can never touch the team or the game. */
 let state = { teams: {}, matches: {}, access: {}, rsvp: {}, children: {}, care: {}, teamCare: {}, programs: {}, waivers: {}, regs: {}, agreed: {} };
-let ui = { view: 'calendar', gameView: 'subs', teamId: null, matchId: null, dragging: false, editFid: null, sortBy: 'need', plan: null, snapAt: null, snapSid: null };
+let ui = { view: 'calendar', door: null, gameView: 'subs', teamId: null, matchId: null, dragging: false, editFid: null, sortBy: 'need', plan: null, snapAt: null, snapSid: null };
 let lastLog = [];
 let lastScreen = null;   // the screen render() last drew, so a redraw of the same one keeps its scroll
 
@@ -462,7 +462,7 @@ function keepStored(key, text) {
 }
 function saveLocal() { keepStored(dataKey(), JSON.stringify(state)); }
 function saveUi() {
-  try { localStorage.setItem(LS_UI, JSON.stringify({ view: ui.view, teamId: ui.teamId, matchId: ui.matchId, sortBy: ui.sortBy, plan: ui.plan, gameView: ui.gameView, follow: ui.follow || null, feedAll: !!ui.feedAll, practice: ui.practice || null, sess: ui.sess ? { tab: ui.sess.tab, scope: ui.sess.scope, month: ui.sess.month } : null, calView: ui.calView || null, calSel: ui.calSel || null, myCal: ui.myCal || null, calOff: ui.calOff || {}, calKOff: ui.calKOff || {}, calTree: !!ui.calTree, subsLook: ui.subsLook || null, trackFull: !!ui.trackFull, tabs: 2 })); } catch (e) { }
+  try { localStorage.setItem(LS_UI, JSON.stringify({ view: ui.view, teamId: ui.teamId, matchId: ui.matchId, sortBy: ui.sortBy, plan: ui.plan, gameView: ui.gameView, follow: ui.follow || null, feedAll: !!ui.feedAll, practice: ui.practice || null, sess: ui.sess ? { tab: ui.sess.tab, scope: ui.sess.scope, month: ui.sess.month } : null, calView: ui.calView || null, calSel: ui.calSel || null, myCal: ui.myCal || null, calOff: ui.calOff || {}, calKOff: ui.calKOff || {}, calTree: !!ui.calTree, subsLook: ui.subsLook || null, trackFull: !!ui.trackFull, door: ui.door || null, tabs: 2 })); } catch (e) { }
 }
 function loadLocal() {
   try {
@@ -844,12 +844,15 @@ async function initSync() {
       for (const tbl of ['teamParents', 'teamPlayers', 'teamFans'])
         for (const [t, row] of Object.entries(a[tbl] || {})) if (u && row && typeof row[u] === 'string') (fam[t] = fam[t] || []).push(row[u]);
       // a club viewer reads every squad, for the names, and none of the coach's notes
-      const view = !!(u && (a.viewers || {})[u]);
-      return { admin, all, staffTeams, fam, view };
+      // a club viewer reads every squad, for the names, and none of the coach's notes; so does a session coach (DOORS.md),
+      // who reads the children's records too, for a child on no team and her age
+      const view = !!(u && ((a.viewers || {})[u] || (a.sessionCoaches || {})[u]));
+      const kids = all || !!(u && (a.sessionCoaches || {})[u]);
+      return { admin, all, staffTeams, fam, view, kids };
     }
     // the teams whose care copies this account reads: an admin's every team, a coach's own
     const careTeams = (r, a) => Object.keys((a && a.teams) || {}).filter(t => r.admin || (me && ((((a.teamIndex || {})[t]) || {})[me.uid] === 'coach')));
-    const reachKey = r => JSON.stringify([r.admin, r.all, r.staffTeams, Object.keys(r.fam).sort(), !!r.view]);
+    const reachKey = r => JSON.stringify([r.admin, r.all, r.staffTeams, Object.keys(r.fam).sort(), !!r.view, !!r.kids]);
 
     /* Her own children, team by team. The lookup tables name one child per
        team; a second on the same team (twins) is found by asking for each
@@ -895,7 +898,7 @@ async function initSync() {
          from her children's squad records (and, once listening, her own
          list of them at families/{uid}, for a child on no team). */
       let children = {};
-      if (r.all) children = (await once('children')) || {};
+      if (r.kids) children = (await once('children')) || {};
       else if (me) {
         const ids = new Set();
         for (const ps of Object.values(kids)) for (const p of Object.values(ps || {})) if (p && typeof p.child === 'string') ids.add(p.child);
@@ -1090,7 +1093,7 @@ async function initSync() {
       };
       watchMyRegs();
       for (const t of careTeams(r, x.access)) val('teamCare/' + t, v => { state.teamCare = state.teamCare || {}; state.teamCare[t] = v || {}; saveLocal(); render(); });
-      if (r.all) val('children', v => {
+      if (r.kids) val('children', v => {
         state.children = v || {};
         overlayPending(state.children, 'children');
         saveLocal(); render();
@@ -1658,6 +1661,17 @@ const famRole = r => r === 'parent' || r === 'player';
    and the screen draws every team read-only. The one read only she has
    beyond the index is every team's squad, for the names. */
 const isViewer = uid => !!(uid && (acc().viewers || {})[uid]);
+/* A session coach (DOORS.md, *A coach of no team*; rules version 35): a
+   coach the club pays for 1-1s and groups who runs no team, named by an
+   admin at access/sessionCoaches/{uid} as a viewer is. Staff for the
+   sessions (she offers, runs and plans them, keeps her register and fees,
+   reads the squads and the children's records for the names and ages, talks
+   to colleagues and families) and nothing of a team: no squad change, no
+   game, no practice, no notices, no conversation of a team's. Her door is
+   Sessions alone. */
+const isSessionCoach = uid => !!(uid && (acc().sessionCoaches || {})[uid]);
+// a coach for the sessions: of any team, or a session coach
+const coachesSessions = uid => isCoachAny(uid) || isSessionCoach(uid);
 /* A player's fans (AUTH.md, *More kinds of people*, 1): a grandparent,
    an aunt, a family friend. Under the player, not beside her parents:
    teams/{tid}/players/{pid}/fans/{uid}, on orgs/ only. Kept apart from
@@ -1737,7 +1751,7 @@ function sheetInfo(k) {
 }
 const refusedWhy = () => `The club\u2019s set-up is out of date: ${canAdmin() ? 'Check readiness, under Settings \u2192 Advanced, says what to do' : 'tell the club admin'}.`;
 const refusedMsg = (kept, lead = 'That didn\u2019t save.') => `${lead} ${kept ? 'It is kept on this phone. ' : ''}${refusedWhy()}`;
-const ROLE_LABEL = { owner: 'App owner', admin: 'Club admin', coach: 'Coach', tracker: 'Tracker', helper: 'Team helper', parent: 'Parent', player: 'Player', fan: 'Fan', viewer: 'Viewer' };
+const ROLE_LABEL = { owner: 'App owner', admin: 'Club admin', coach: 'Coach', tracker: 'Tracker', helper: 'Team helper', parent: 'Parent', player: 'Player', fan: 'Fan', viewer: 'Viewer', sesscoach: 'Session coach' };
 
 /* Whoever looks after the app itself. Read from the database root, never from
    this file — a personal email committed to a public repo gets scraped, sticks
@@ -1755,7 +1769,7 @@ const approved = uid => !!(uid && (acc().index || {})[uid]);
    flat node that a rule can check in a single lookup. */
 function hasAnyRole(uid) {
   const a = acc();
-  if ((a.admins || {})[uid] || (a.viewers || {})[uid]) return true;
+  if ((a.admins || {})[uid] || (a.viewers || {})[uid] || (a.sessionCoaches || {})[uid]) return true;
   for (const ta of Object.values(a.teams || {}))
     if ((ta.coaches || {})[uid] || (ta.trackers || {})[uid] || (ta.helpers || {})[uid]) return true;
   for (const t of Object.values(state.teams || {}))
@@ -1940,12 +1954,36 @@ function syncTeamPlayers(tid) {
   const want = playersWanted(tid), now = (acc().teamPlayers || {})[tid] || {};
   const team = state.teams[tid];
   const holds = (u, pid) => !!((((team.players || {})[pid] || {}).self || {})[u]);
+  // everyone the table names before or after: `now` is the live table, which the deletes below empty
+  const touched = new Set([...Object.keys(want), ...Object.keys(now)]);
   let changed = false;
   for (const [u, pid] of Object.entries(want))
     if (!now[u] || !holds(u, now[u])) { quiet(`access/teamPlayers/${tid}/${u}`, pid); changed = true; }
   for (const u of Object.keys(now))
     if (!want[u]) { delDeep(state, `access/teamPlayers/${tid}/${u}`); remoteDel(`access/teamPlayers/${tid}/${u}`); changed = true; }
+  for (const u of touched) syncPlayerIndex(u);
   if (changed) saveLocal();
+}
+/* The seventh table (DOORS.md; rules version 36): access/playerIndex/{uid} =
+   a team she plays on with her own sign-in, so a root-level rule can ask "is
+   this account a child's" with one lookup. It is what keeps a player's own
+   sign-in out of a conversation keyed by people (talk/), which a rule could
+   not tell from a parent before this. Its value is checked against
+   teamPlayers, which the squad's own `self` backs, so it can never claim more
+   than the squad does. Her own phone writes hers on accepting her invite,
+   the coach's and an admin's keep it, and so does the server. */
+function playerTeamOf(uid) {
+  return teams().map(t => t.id).sort().find(tid => Object.values((state.teams[tid] || {}).players || {}).some(p => p && (p.self || {})[uid])) || null;
+}
+function syncPlayerIndex(uid) {
+  if (!uid || !me) return;
+  const now = (acc().playerIndex || {})[uid] || null;
+  // any team will do, so only rewrite it once the one it names stops being true
+  if (now && playersWanted(now)[uid]) return;
+  const want = playerTeamOf(uid);
+  if (want === now) return;
+  if (want) quiet(`access/playerIndex/${uid}`, want);
+  else { delDeep(state, `access/playerIndex/${uid}`); remoteDel(`access/playerIndex/${uid}`); }
 }
 
 /* The sixth, for a player's fans (AUTH.md, *More kinds of people*, 1):
@@ -2333,11 +2371,11 @@ async function takeSeat(put, base, v, who, at) {
     return k;
   }
 }
-const INVITE_ROLES = { coach: 'Coach', tracker: 'Tracker', helper: 'Team helper', parent: 'Parent', viewer: 'Club viewer' };
+const INVITE_ROLES = { coach: 'Coach', tracker: 'Tracker', helper: 'Team helper', parent: 'Parent', viewer: 'Club viewer', sesscoach: 'Session coach' };
 // where each staff role is named on a team: access/teams/{tid}/{key}/{uid}
 const STAFF_KEY = { coach: 'coaches', tracker: 'trackers', helper: 'helpers' };
 // a role for the whole club, with no team to pick
-const CLUB_ROLES = new Set(['viewer']);
+const CLUB_ROLES = new Set(['viewer', 'sesscoach']);
 let rtdb = null;        // { db, mod } once the database module has loaded, code or not
 /* null until asked, then 'asking', 'ok', 'old' (the published rules predate
    this app) or 'app' (this app predates them: another phone has already
@@ -2525,6 +2563,7 @@ function inviteWhat(v) {
   if (v.role === 'player') return `a player, #${esc(v.playerNo || '?')} on <b>${esc(v.teamName || 'a team')}</b>, with your own sign-in`;
   if (v.role === 'fan') return `a fan of ${v.playerNo ? '#' + esc(v.playerNo) : 'a player'} on <b>${esc(v.teamName || 'a team')}</b>: the calendar, the games as they happen and the team's notices${v.approved ? '' : '. A coach of the team says yes before you see anything'}`;
   if (v.role === 'viewer') return 'a club viewer: every team\u2019s games and calendar, to read';
+  if (v.role === 'sesscoach') return 'a session coach: 1-1s and small groups for the club\u2019s players, with no team of your own';
   return v.role === 'parent'
     ? `a parent of ${v.playerNo ? 'the player wearing shirt ' + esc(v.playerNo) : 'a player'} on <b>${esc(v.teamName || 'a team')}</b>`
     : `${role.toLowerCase()} of <b>${esc(v.teamName || 'a team')}</b>`;
@@ -2653,6 +2692,7 @@ async function redeemHere() {
       else if (v.role === 'player') await put(W(`teams/${v.team}/players/${v.player}/self/${who}`), id);
       else if (v.role === 'fan') await put(W(`teams/${v.team}/players/${v.player}/fans/${who}`), id);
       else if (v.role === 'viewer') await put(W('access/viewers/' + who), id);
+      else if (v.role === 'sesscoach') await put(W('access/sessionCoaches/' + who), id);
       else await put(W(`access/teams/${v.team}/${STAFF_KEY[v.role] || 'trackers'}/${who}`), id);
       await put(W('access/index/' + who), id);
     }
@@ -2671,13 +2711,13 @@ async function redeemHere() {
       doc: { ws, team: v.team, teamName: v.teamName || '', clubName: v.clubName || '', fan: true } };
     holdJoin(); maybeLoadJoin(); render(); return;
   }
-  if (v.role === 'player') await soft(put(W(`access/teamPlayers/${v.team}/${who}`), v.player));
+  if (v.role === 'player') { await soft(put(W(`access/teamPlayers/${v.team}/${who}`), v.player)); await soft(put(W(`access/playerIndex/${who}`), v.team)); }
   else if (v.role === 'fan') {
     // her name where her player's family reads it, then the table
     await soft(put(W(`teams/${v.team}/players/${v.player}/fanNames/${who}`), String(me.name || me.email || 'A fan').slice(0, 80)));
     await soft(put(W(`access/teamFans/${v.team}/${who}`), v.player));
   }
-  else if (v.role === 'viewer') { /* club-wide: no per-team table to join */ }
+  else if (v.role === 'viewer' || v.role === 'sesscoach') { /* club-wide: no per-team table to join */ }
   else if (v.role !== 'parent') {
     await soft(put(W(`access/teamIndex/${v.team}/${who}`), v.role));
     // the club's drill shelves ask "a helper of any team?" with no team in hand
@@ -2888,7 +2928,7 @@ function sheetInviteDetail(id) {
   const st = inviteStatus(v), link = inviteLink(id);
   const when = ms => ms ? new Date(ms).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'unknown';
   const who = v.used && (acc().members || {})[v.used.by];
-  const stillHas = v.used && (v.role === 'viewer' ? isViewer(v.used.by) : v.role === 'parent'
+  const stillHas = v.used && (v.role === 'viewer' ? isViewer(v.used.by) : v.role === 'sesscoach' ? isSessionCoach(v.used.by) : v.role === 'parent'
     ? !!(((((state.teams[v.team] || {}).players || {})[v.player] || {}).guardians || {})[v.used.by])
     : v.role === 'coach' ? isCoach(v.team, v.used.by) : isTracker(v.team, v.used.by));
   const line = (k, val) => `<div class="spread" style="padding:6px 0;border-top:1px solid var(--line)"><span class="muted">${k}</span><span style="text-align:right">${val}</span></div>`;
@@ -2923,7 +2963,8 @@ function sheetInvite() {
     <p class="lbl">As</p>
     <div class="chips" style="margin-bottom:12px">${Object.entries(INVITE_ROLES).map(([k, l]) =>
     `<button class="chip" type="button" data-act="invitepick" data-k="role" data-v="${k}" aria-pressed="${f.role === k}">${l}</button>`).join('')}</div>
-    ${CLUB_ROLES.has(f.role) ? `<p class="muted" style="margin-top:0">Reads every team's calendar and games, with the children's names, and nothing else: no emails, no access log, no coach's notes, no messages, no answering who's coming, no changes.</p>` : `<p class="lbl">Team</p>
+    ${f.role === 'sesscoach' ? `<p class="muted" style="margin-top:0">Runs 1-1s and small groups for the club's players: offers and books sessions and bookable times, keeps her register and fees, and messages the families in them. No team of her own: no squad, game, practice or notice is hers.</p>` : ''}
+    ${f.role === 'viewer' ? `<p class="muted" style="margin-top:0">Reads every team's calendar and games, with the children's names, and nothing else: no emails, no access log, no coach's notes, no messages, no answering who's coming, no changes.</p>` : `<p class="lbl">Team</p>
     ${pickOne('invitepick', 'team', f.team, teams().map(x => [x.id, esc(x.name || 'Team')]), 'Add a team first.')}`}
     ${f.role === 'helper' ? `<p class="muted" style="margin-top:-4px">A manager or a volunteer: the team's calendar, register, notices, practice plans and game plans before kick-off, and the drills. Not the squad, the clock or the subs, and no family's conversations.</p>` : ''}
     ${f.role === 'parent' ? `<p class="lbl">Parent of</p>
@@ -3568,6 +3609,20 @@ function joinCard(t) {
                                           those two while they are staff, and
                                           nobody else, admins included. Its
                                           own seen/ and got/ the same way.
+     talk/{code}/{a}~{b}/m/{id}           two people, keyed by the accounts in
+                                          it and not by a team (DOORS.md; the
+                                          owner, 2026-10-20): a session's coach
+                                          and a child's family, an admin and
+                                          the family of a child on no team. At
+                                          least one of the two is staff (an
+                                          admin, a coach, a helper or a session
+                                          coach), both are in the club, and
+                                          only the two read it (the owner,
+                                          2026-10-22: the people in a message
+                                          are the only people who can open
+                                          it). Never a player's own sign-in
+                                          (playerIndex), never two families.
+                                          Its own seen/ and got/.
 
    Either side starts a family conversation: a parent with the coaches, or a
    coach or admin with a family on her team (build 106). It is the same one
@@ -3630,11 +3685,11 @@ const myThread = (tid, fam) => !!me && famThreads().some(x => x.tid === tid && x
 /* Coaches and admins talking to each other. Staff here is what the staffdm
    rule reads: an admin, or a coach of any team (coachIndex). The app owner
    with no role in the club is neither, and the rule would refuse her. */
-const staffUid = u => !!u && (isAdmin(u) || isCoachAny(u));
+const staffUid = u => !!u && (isAdmin(u) || coachesSessions(u));
 const amStaff = () => !!me && !!fb && !!wsCode() && !needsSignIn() && anyAdmins() && staffUid(me.uid);
 function colleagues() {
   if (!amStaff()) return [];
-  const out = new Set([...Object.keys(acc().admins || {}), ...coachUids()]);
+  const out = new Set([...Object.keys(acc().admins || {}), ...coachUids(), ...Object.keys(acc().sessionCoaches || {})]);
   out.delete(me.uid);
   return [...out].filter(staffUid);
 }
@@ -3642,7 +3697,61 @@ function colleagues() {
 const sdId = (a, b) => [a, b].sort().join('~');
 const sdOther = cid => String(cid || '').split('~').find(u => u !== (me && me.uid)) || '';
 const myStaffChat = cid => amStaff() && String(cid || '').split('~').includes(me.uid) && staffUid(sdOther(cid));
-const msgOn = () => msgTeams().length > 0 || colleagues().length > 0;
+/* Conversations keyed by people (DOORS.md, *Messages: people, not teams*):
+   `talk/{code}/{a}~{b}`, the staffdm shape for a pair that is not two
+   colleagues. Who may be in one is what the rule reads: both in the club's
+   index, at least one of them staff for this (an admin, a coach of any team,
+   a team helper or a session coach), neither a player's own sign-in
+   (playerIndex: she reads her parents' conversations, famThreads(), and a
+   child alone in a chat with an adult is not a thing this app makes), and
+   nobody but the two reads it (the owner, 2026-10-22). Two colleagues talk
+   at staffdm, the two alone, as before. */
+const isHelperAny = u => !!u && teams().some(t => isHelper(t.id, u));
+const talkStaff = u => !!u && (isAdmin(u) || coachesSessions(u) || isHelperAny(u));
+const isPlayerUid = u => !!u && (!!(acc().playerIndex || {})[u] || teams().some(t => Object.values(t.players || {}).some(p => p && (p.self || {})[u])) || Object.values(clubKids()).some(c => c && (c.self || {})[u]));
+// which root a pair's conversation is at: two colleagues at staffdm, anyone else at talk
+const cidRoot = cid => { const [a, b] = String(cid || '').split('~'); return staffUid(a) && staffUid(b) ? 'staffdm' : 'talk'; };
+function myTalk(cid) {
+  if (!me || !fb || !wsCode() || needsSignIn() || !anyAdmins()) return false;
+  const pair = String(cid || '').split('~');
+  if (pair.length !== 2 || !pair.includes(me.uid)) return false;
+  const u = sdOther(cid);
+  if (!u || u === me.uid || cidRoot(cid) !== 'talk') return false;
+  if (!(acc().index || {})[u] || !(acc().index || {})[me.uid]) return false;
+  if (isPlayerUid(u) || isPlayerUid(me.uid)) return false;
+  return talkStaff(me.uid) || talkStaff(u);
+}
+const TALK_DAYS = 30;
+/* Who she may start a conversation with, from the sessions: the coach of a
+   session a child of hers is in (booked, asked or waiting), the families of
+   the children in a session she runs, and for an admin the family of a child
+   on no team, who has no team conversation at all. A session long past brings
+   nobody; one that was had keeps its conversation readable (viewInbox lists
+   whatever is there and hers). */
+function talkPartners() {
+  if (!me || !fb || !wsCode() || needsSignIn() || !anyAdmins()) return [];
+  const out = new Set(), kids = myChildren(), since = addDays(todayStr(), -TALK_DAYS);
+  const fams = x => Object.keys((((x.who || {}).p) || {}).guardians || {});
+  for (const s of sessAll()) {
+    if (s.called || !s.date || s.date < since) continue;
+    const xs = bookingsOf(s.id).filter(x => ['in', 'asked', 'wait'].includes(x.st));
+    if (s.coach && kids.some(k => xs.some(x => x.pid === k.p.id))) out.add(s.coach);
+    if (canRun(s)) for (const x of xs) for (const u of fams(x)) out.add(u);
+  }
+  if (canAdmin()) for (const c of looseKids()) for (const u of Object.keys({ ...(c.family || {}), ...(c.guardians || {}) })) out.add(u);
+  out.delete(me.uid);
+  return [...out].filter(u => myTalk(sdId(me.uid, u)));
+}
+// what the list and the thread say under a person she talks to from the sessions
+function talkLabel(u) {
+  if (staffUid(u)) return colleagueLabel(u);
+  if (isHelperAny(u)) return 'Team helper';
+  const kids = new Set();
+  for (const t of teams()) for (const p of players(t)) if ((p.guardians || {})[u] && p.name) kids.add(p.name);
+  for (const c of looseKids()) if ((c.family || {})[u] || (c.guardians || {})[u]) kids.add(kidName(c));
+  return kids.size ? 'Parent of ' + [...kids].join(', ') : 'Parent';
+}
+const msgOn = () => msgTeams().length > 0 || colleagues().length > 0 || talkPartners().length > 0;
 
 function saveMsgs() {
   if (!msgFor) return;
@@ -3684,6 +3793,8 @@ function watchMessages() {
   for (const x of famThreads()) want[`dm/${code}/${x.tid}/${x.fam}`] = { kind: 'dm', tid: x.tid, fam: x.fam };
   // one listener per colleague: a rule cannot list her conversations, but it can answer for each pair
   for (const u of colleagues()) { const cid = sdId(me.uid, u); want[`staffdm/${code}/${cid}`] = { kind: 'sd', cid }; }
+  // the people she talks to from the sessions, one listener per pair the same way: nobody reads the list, an admin included
+  for (const u of talkPartners()) { const cid = sdId(me.uid, u); want[`${cidRoot(cid)}/${code}/${cid}`] = { kind: 'sd', cid }; }
   for (const p of Object.keys(msgSubs)) if (!want[p]) {
     try { msgSubs[p](); } catch (e) { }
     delete msgSubs[p]; delete msgPrimed[p];
@@ -3707,6 +3818,7 @@ function onMsgs(p, w, v) {
   if (!msgFor) return;
   if (w.kind === 'board') msgs.board[w.tid] = v || {};
   else if (w.kind === 'sd') { if (v) msgs.sd[w.cid] = v; else delete msgs.sd[w.cid]; }
+
   else if (w.fam) {
     const all = { ...(msgs.dm[w.tid] || {}) };
     if (v) all[w.fam] = v; else delete all[w.fam];
@@ -3792,7 +3904,7 @@ function convUnread(c) {
   const mark = (convOf(c).seen || {})[me.uid] || 0;
   return convMsgs(c).filter(x => x.by !== me.uid && !x.status && (x.at || 0) > mark).length;
 }
-const convPath = c => c.cid ? `staffdm/${msgFor.code}/${c.cid}` : `dm/${msgFor.code}/${c.tid}/${c.fam}`;
+const convPath = c => c.cid ? `${cidRoot(c.cid)}/${msgFor.code}/${c.cid}` : `dm/${msgFor.code}/${c.tid}/${c.fam}`;
 const convHash = c => c.cid ? `#/messages/with/${sdOther(c.cid)}` : `#/messages/${c.tid}/${c.fam}`;
 /* A marker is a time, compared with a message's own time. Never earlier than
    the newest message it covers, so a phone whose clock runs behind the
@@ -3809,7 +3921,7 @@ function msgUnread() {
   for (const t of msgTeams()) n += notices(t.id).filter(noticeUnread).length;
   for (const t of staffTeams()) for (const fam of Object.keys(msgs.dm[t.id] || {})) n += threadUnread(t.id, fam) ? 1 : 0;
   for (const x of famThreads()) n += threadUnread(x.tid, x.fam) ? 1 : 0;
-  for (const cid of Object.keys(msgs.sd || {})) if (myStaffChat(cid)) n += convUnread({ cid }) ? 1 : 0;
+  for (const cid of Object.keys(msgs.sd || {})) if (myStaffChat(cid) || myTalk(cid)) n += convUnread({ cid }) ? 1 : 0;
   return n;
 }
 const notesUnread = () => (newsFor() ? newsUnread() : 0) + (me ? alertsUnread() : 0);
@@ -3959,7 +4071,7 @@ function queueMsg(kind, tid, fam, text, extra) {
   const id = uid();
   const value = { by: me.uid, byName: me.name || 'Someone', at: nowMs(), text, ...(extra || {}) };
   // for a colleagues' conversation, tid is its id
-  const path = kind === 'board' ? `board/${msgFor.code}/${tid}/${id}` : kind === 'sd' ? `staffdm/${msgFor.code}/${tid}/m/${id}` : `dm/${msgFor.code}/${tid}/${fam}/m/${id}`;
+  const path = kind === 'board' ? `board/${msgFor.code}/${tid}/${id}` : kind === 'sd' ? `${cidRoot(tid)}/${msgFor.code}/${tid}/m/${id}` : `dm/${msgFor.code}/${tid}/${fam}/m/${id}`;
   msgs.outbox[id] = kind === 'sd' ? { kind, cid: tid, path, value, status: 'sending' } : { kind, tid, fam: fam || null, path, value, status: 'sending' };
   sendOut(id);
   return id;
@@ -4308,7 +4420,7 @@ const LOCK_SVG = '<svg class="lock" viewBox="0 0 24 24" width="13" height="13" f
 // a colleague as the list and the thread name her: who, and what she is in the club
 function colleagueLabel(u) {
   const ts = teams().filter(t => (teamAccess(t.id).coaches || {})[u]).map(t => t.name).filter(Boolean);
-  return [isAdmin(u) ? 'Admin' : 'Coach', ts.join(', ')].filter(Boolean).join(' · ');
+  return [isAdmin(u) ? 'Admin' : isCoachAny(u) ? 'Coach' : 'Session coach', ts.join(', ')].filter(Boolean).join(' · ');
 }
 function viewInboxMsgs() {
   if (!msgOn() && !wsRead && fbConfig().apiKey) return `<div class="empty"><strong>Connecting…</strong>Messages appear once TeamPlayHQ has reached the club.</div>`;
@@ -4354,19 +4466,23 @@ function viewInboxMsgs() {
       const kids = childrenOf(t.id, fam);
       return convRow({ tid: t.id, fam }, `${esc(familyName(fam))}${kids.length ? ` <span class="muted">· ${esc(kids.join(', '))}</span>` : ''}${many ? ` <span class="pill">${esc(t.name || '')}</span>` : ''}`, '');
     }));
-  const sdConvs = colleagues().map(u => ({ cid: sdId(me.uid, u), u }))
+  /* The people she talks to, colleagues and the sessions' alike: whoever she
+     may write to now, and whatever conversation of hers is already there. */
+  const pairs = new Set([...colleagues(), ...talkPartners()].map(u => sdId(me.uid, u)));
+  for (const cid of Object.keys(msgs.sd || {})) if (myStaffChat(cid) || myTalk(cid)) pairs.add(cid);
+  const sdConvs = [...pairs].map(cid => ({ cid, u: sdOther(cid) }))
     .filter(x => convMsgs(x).length)
-    .map(x => convRow(x, `${esc(familyName(x.u))} <span class="muted">· ${esc(colleagueLabel(x.u))}</span>`, ''));
+    .map(x => convRow(x, `${esc(familyName(x.u))} <span class="muted">· ${esc(talkLabel(x.u))}</span>`, ''));
   const rows = [...staffConvs, ...sdConvs].sort((a, b) => (b.n ? 1 : 0) - (a.n ? 1 : 0) || b.last - a.last);
   const list = famConvs.concat(rows).map(r => r.html).join('');
-  const canStart = staff.length || colleagues().length || fams.length > 1;
+  const canStart = staff.length || colleagues().length || talkPartners().length || fams.length > 1;
   /* A family's one door to the coaches is a row in the list below, and the
      notices under it have no reply box, so she looked for one (UX-REVIEW-3.md,
      17.2). For someone who can write to nobody else the button at the top says
      what it does: one team opens the conversation, several open the list of
      them. Staff, who write to anyone, keep New message. */
   const own = fams.filter(x => x.fam === me.uid);
-  const toCoaches = own.length && !staff.length && !colleagues().length;
+  const toCoaches = own.length && !staff.length && !colleagues().length && !talkPartners().length;
   const startBtn = toCoaches
     ? (own.length === 1 ? `<button class="btn sm" data-act="thread" data-tid="${own[0].tid}" data-fam="${esc(me.uid)}">Message the coaches</button>` : `<button class="btn sm" data-act="msgnew">Message the coaches</button>`)
     : canStart ? `<button class="btn sm" data-act="msgnew">New message</button>` : '';
@@ -4375,7 +4491,7 @@ function viewInboxMsgs() {
     <div class="spread"><h2>Messages</h2>${startBtn}</div>
     <!--others-->
     <div class="card"><h2 style="margin-bottom:8px">Conversations</h2>
-      ${list ? `<div class="plist">${list}</div>` : `<p class="muted" style="margin:0">Nothing yet.${canStart ? ` Tap <b>New message</b> to write to ${staff.length ? 'a family on your team' : ''}${staff.length && colleagues().length ? ', or ' : ''}${colleagues().length ? 'another coach or an admin' : ''}.` : ''}</p>`}
+      ${list ? `<div class="plist">${list}</div>` : `<p class="muted" style="margin:0">Nothing yet.${canStart ? ` Tap <b>New message</b> to write to ${[staff.length ? 'a family on your team' : '', talkPartners().length ? (talkStaff(me.uid) ? 'a family from your sessions' : 'the coach of a session') : '', colleagues().length ? 'another coach or an admin' : ''].filter(Boolean).join(', or ')}.` : ''}</p>`}
       <p class="muted lockline" style="margin:8px 0 0">${LOCK_SVG} Private: each conversation is readable only by the people in it. <button class="linkbtn" data-act="msgprivacy">How private?</button></p></div>
     <div class="card"><div class="spread"><h2 style="margin:0">Team notices</h2>
       ${noticeTeams().length ? `<button class="btn quiet sm" data-act="postnew">Post a notice</button>` : ''}</div>
@@ -4389,6 +4505,7 @@ function viewInboxMsgs() {
 /* Who can read a conversation, in words: the lock line and the privacy sheet
    both say it, and it is exactly what the rules let read it. */
 function convReaders(c) {
+  // a conversation keyed by two people is the two alone, a colleague's or a family's alike (the owner, 2026-10-22)
   if (c.cid) return `you and ${esc(familyName(sdOther(c.cid)))}`;
   const t = state.teams[c.tid];
   const fam = c.fam === me.uid ? 'you' : esc(familyName(c.fam));
@@ -4397,6 +4514,12 @@ function convReaders(c) {
 function viewThread() {
   const c = ui.thread || {};
   if (c.cid) {
+    if (cidRoot(c.cid) === 'talk') {
+      if (!myTalk(c.cid)) { ui.view = 'inbox'; ui.thread = null; return viewInbox(); }
+      const u = sdOther(c.cid);
+      return threadScreen(c, `<b>${esc(familyName(u))}</b><span class="rowsub">${esc(talkLabel(u))}</span>`,
+        `Only you and ${esc(familyName(u))} can read this conversation — no other coach, and no admin. Nobody can edit or delete a message once it is sent.`);
+    }
     if (!myStaffChat(c.cid)) { ui.view = 'inbox'; ui.thread = null; return viewInbox(); }
     const u = sdOther(c.cid);
     return threadScreen(c, `<b>${esc(familyName(u))}</b><span class="rowsub">${esc(colleagueLabel(u))}</span>`,
@@ -4495,7 +4618,7 @@ function sheetPrivacy() {
   const c = ui.view === 'thread' ? ui.thread : null;
   openSheet(`<h3>${LOCK_SVG} How private are messages?</h3>
     ${c ? `<p><b>Who can read this one:</b> ${convReaders(c)}. The club's database refuses everybody else.</p>` : ''}
-    <p><b>Kept to the people in it.</b> A family's conversation is readable by that family, the team's coaches and the club's admins — never one coach alone, and never another family. A conversation between two coaches or admins is readable by those two only. Trackers, other parents and anyone outside the club cannot open any of it.</p>
+    <p><b>Kept to the people in it.</b> A family's conversation with a team is readable by that family, the team's coaches and the club's admins — never one coach alone, and never another family. A conversation between a family and the coach of a session (or an admin), or between two coaches or admins, is readable by those two only. Trackers, other parents and anyone outside the club cannot open any of it.</p>
     <p><b>Encrypted on the way and where it is kept.</b> Messages travel over an encrypted connection (HTTPS) and are stored encrypted by Google, which hosts the club's database.</p>
     <p><b>Not end-to-end encrypted.</b> Whoever runs the club's database (the app's owner) can open it and read it, as with email or most club apps. Don't send card numbers or passwords here.</p>
     <p><b>On phones.</b> A copy stays on each phone that opens the conversation, so it works with no signal, and is wiped when that person signs out.</p>
@@ -4526,6 +4649,9 @@ function msgPeople() {
   }
   for (const u of colleagues()) out.push({ key: `c:${u}`, c: { cid: sdId(me.uid, u) }, kind: 'staff', group: 'staff', name: familyName(u),
     sub: colleagueLabel(u), find: 'staff coach admin' });
+  // from the sessions: the coach of a child's session, or the families of the children in hers (DOORS.md)
+  for (const u of talkPartners()) if (!out.some(p => p.key === `c:${u}`)) out.push({ key: `t:${u}`, c: { cid: sdId(me.uid, u) }, kind: talkStaff(u) ? 'coach' : 'family', group: 'sessions', name: familyName(u),
+    sub: [talkLabel(u), 'sessions'].join(' · '), find: talkStaff(u) ? 'session coach' : 'session family parent' });
   // the ones she talks to most recently first, then by name
   for (const p of out) { const l = convMsgs(p.c); p.last = l.length ? l[l.length - 1].at || 0 : 0; }
   return out.sort((a, b) => b.last - a.last || a.name.localeCompare(b.name));
@@ -4544,6 +4670,7 @@ function pickGroups() {
   const ts = staffTeams().length ? staffTeams() : famThreads().map(x => state.teams[x.tid]).filter((t, i, a) => t && a.indexOf(t) === i);
   const out = ts.map(t => [t.id, t.name || 'Team', count(t.id)]);
   if (colleagues().length) out.push(['staff', 'Coaches and admins', count('staff')]);
+  if (count('sessions')) out.push(['sessions', 'Sessions', count('sessions')]);
   return out;
 }
 function pickGroupsHtml() {
@@ -7456,6 +7583,7 @@ function roleWords(lim) {
   if (lim === 'player') return 'You are signed in as a player: you see your team, and say whether you are coming.';
   if (lim === 'fan') return 'You follow the calendar, the games and the notices. The family answers and talks to the coaches.';
   if (lim === 'viewer') {
+    if (sessOnly()) return 'You coach sessions here: 1-1s and small groups for the club\u2019s players, your bookable times, who is booked and what they owe. Teams, games and practices are the team coaches\u2019.';
     const t = team();
     const asViewer = me && isViewer(me.uid) && !teams().some(x => isCoach(x.id, me.uid));
     return t ? `You can read ${t.name ? esc(t.name) : 'this team'}, not change it: ${asViewer ? 'you are a club viewer' : 'it is another team\u2019s'}.` : 'You can read this club, not change it.';
@@ -7515,7 +7643,11 @@ function render() {
   // a family's What's new is the top of Messages (17.1); an old link or a bell tap lands there
   if (ui.view === 'notes' && !shut && changesInMessages()) ui.view = 'inbox';
   // the same wait, for the same reason: a family's link to a session opened cold
-  if (ui.view === 'sessions' && !shut && (wsRead || !fbConfig().apiKey) && !canSessions()) ui.view = 'club';
+  if ((ui.view === 'sessions' || ui.view === 'shome') && !shut && (wsRead || !fbConfig().apiKey) && !canSessions()) ui.view = 'club';
+  // a session coach has no Teams door: a team's screen, a game or the club's screens land her on her own Home
+  if (!shut && (wsRead || !fbConfig().apiKey) && sessOnly() && doorOf() === 'teams') ui.view = 'shome';
+  // which door she is standing in, settled once the screen is (DOORS.md): the bar, the title and Home read it
+  settleDoor();
   // an evaluator's scoring screen, for the evaluators a tryout names and nobody else
   if (ui.view === 'tryout' && !shut && (wsRead || !fbConfig().apiKey) && !myTryouts().length) ui.view = 'club';
   // a parent has no business reading the rest of the squad's names or the team's set-up
@@ -7531,7 +7663,7 @@ function render() {
   if (pb) pb.hidden = !train;
   if (ui.view === 'practice' && !train) ui.view = 'season';
   // a family past the club's deadline for her child's details: her calendar, messages and Home (the cards to finish), until it is done
-  if (!shut && detailsBlocked() && !DETAILS_OPEN.has(ui.view)) { ui.view = homeView(); inGame = false; }
+  if (!shut && detailsBlocked() && !DETAILS_OPEN.has(ui.view)) { ui.view = doorHome(); inGame = false; }
   // club admin, account settings and the person's calendar are not team-level, so the tab row steps aside
   const teamLevel = ['season', 'roster', 'practice'].includes(ui.view);
   if (ui.view === 'people' && !canAdmin() && !teams().some(x => isCoach(x.id, me && me.uid))) ui.view = 'club';
@@ -7599,7 +7731,7 @@ function render() {
   /* Not for a family (UX-REVIEW-3.md, 13.8): her Home leads with her child,
      and the sentence sat over him; it stays in the account sheet. */
   const fam = navKind() === 'family';
-  const roleNote = v === homeView() && !fam ? roleCard(lim) : '';
+  const roleNote = v === doorHome() && !fam ? roleCard(lim) : '';
   // the details strip, except where the cards to finish are on screen themselves (kidCards says the same)
   const kidsHere = v === 'mine' || (fam && v === 'season');
   /* Never let a rehearsal pass for the real thing. Both facts are worth saying
@@ -7644,7 +7776,7 @@ function render() {
           v === 'season' ? viewSeason() : v === 'teamstats' ? viewTeamStats() : v === 'minutes' ? viewMinutes() : v === 'attend' ? viewAttend() :
             v === 'formation' ? viewFormation() : v === 'games' ? viewGames() : v === 'club' ? viewClub() : v === 'people' ? viewPeople() : v === 'admin' ? viewAdmin()
               : v === 'mine' ? viewMine() : v === 'practice' ? viewPractice()
-                : v === 'inbox' ? viewInbox() : v === 'notes' ? viewNotes() : v === 'thread' ? viewThread() : v === 'sessions' ? viewSessions() : v === 'scheduler' ? viewScheduler() : v === 'regs' ? viewRegs() : v === 'tryout' ? viewTryout() : v === 'comply' ? viewComply()
+                : v === 'inbox' ? viewInbox() : v === 'notes' ? viewNotes() : v === 'thread' ? viewThread() : v === 'sessions' ? viewSessions() : v === 'shome' ? viewSessHome() : v === 'scheduler' ? viewScheduler() : v === 'regs' ? viewRegs() : v === 'tryout' ? viewTryout() : v === 'comply' ? viewComply()
                 : v === 'setup' ? viewSetup() : viewCalendar());
   } finally { placeMemo = null; }
   syncHash();
@@ -7771,7 +7903,7 @@ const viewScope = (v = ui.view) => v === 'calendar' || v === 'mine' ? (me ? 'me'
 const VIEW_TITLE = {
   calendar: 'Calendar', setup: 'Settings', people: 'People', admin: 'Club details', sessions: 'Sessions',
   scheduler: 'Scheduler', inbox: 'Messages', thread: 'Messages', notes: 'What\'s new', mine: 'My players', formation: 'Shapes',
-  games: 'Games', regs: 'Registration', tryout: 'Tryouts', comply: 'Coach compliance', club: 'Club home'
+  games: 'Games', regs: 'Registration', tryout: 'Tryouts', comply: 'Coach compliance', club: 'Club home', shome: 'Home'
 };
 // the Sessions view draws three of Settings' screens too, each under its own name
 const screenTitle = v => v === 'sessions' && sessSetTab() ? SESS_SET[sessSetTab()] : VIEW_TITLE[v];
@@ -7793,6 +7925,49 @@ const screenTitle = v => v === 'sessions' && sessSetTab() ? SESS_SET[sessSetTab(
    and finds My players under More. The title row above says where she is,
    with a back arrow where there is somewhere up to go; the club's name on
    it is the club switcher; the top bar keeps the account alone. */
+/* Two doors, one app (DOORS.md; the owner, 2026-10-20): Teams is the
+   season (teams, games, practices, the Scheduler) and Sessions the business
+   (1-1s, groups, booking, fees, hours, fields), each with a bar of its own,
+   the same for everyone standing in it. A door is a mode the phone
+   remembers (ui.door), never a role and never written to the club. The
+   screen decides the door where it names one (doorOf), so a session alert
+   lands in Sessions and a game link in Teams; the remembered door decides
+   only the shared screens (Home, Calendar, Messages, More). Who has the
+   Sessions door is who has sessions at all (canSessions); whoever has one
+   door alone has no switch, and a tap at the other is refused in the
+   handler. */
+const DOORS = { teams: 'Teams', sessions: 'Sessions' };
+// the screens that are the Sessions door's own, and a tab's own screen inside it
+const SESSION_VIEWS = ['sessions', 'shome'];
+/* A session coach with nothing of a team (no team she coaches, tracks or
+   helps, no child, no fan's player, not a viewer or an admin) has the
+   Sessions door alone: Teams would be a club of teams she may not touch. */
+const sessOnly = () => !!me && gated() && isSessionCoach(me.uid) && !canAdmin() && !isViewer(me.uid) && !anyPlayers()
+  && !teams().some(t => isCoach(t.id, me.uid) || isTracker(t.id, me.uid) || isHelper(t.id, me.uid));
+const hasDoor = d => d === 'teams' ? !sessOnly() : (d === 'sessions' && canSessions());
+const doorOf = (v = ui.view) => SESSION_VIEWS.includes(v) ? 'sessions'
+  : TEAM_VIEWS.includes(v) || ['games', 'formation', 'scheduler', 'club', 'people', 'admin', 'regs', 'tryout', 'comply'].includes(v) ? 'teams' : null;
+/* Where she starts, decided from where her uid appears, as navKind() decides
+   Home: a family whose only children are on no team is the person the
+   Sessions door is for, and opens in it. Everyone else opens in Teams. */
+function defaultDoor() {
+  if (sessOnly()) return 'sessions';
+  if (!hasDoor('sessions') || navKind() !== 'family') return 'teams';
+  const kids = myChildren();
+  return kids.length && kids.every(k => k.t.id === CLUB_TID) && !myPlayers().length && !myFanOf().length ? 'sessions' : 'teams';
+}
+/* The door she is standing in: the screen's, where it names one; else the
+   remembered one, while she still has it; else where she starts. */
+function curDoor() {
+  const named = doorOf();
+  if (named && hasDoor(named)) return named;
+  if (ui.door && DOORS[ui.door] && hasDoor(ui.door)) return ui.door;
+  return defaultDoor();
+}
+// settled once per render, so the bar, the title and Home agree
+function settleDoor() { ui.door = curDoor(); return ui.door; }
+// the door's Home: a team's (homeView) in Teams, the Sessions Home in Sessions
+const doorHome = () => curDoor() === 'sessions' ? 'shome' : homeView();
 function navKind() {
   if (!me) return 'staff';
   if (canAdmin() || isViewer(me.uid)) return 'staff';
@@ -7836,11 +8011,17 @@ const NAV_ICON = {
   calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8.5 3v4M15.5 3v4"/></svg>',
   game: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5l3.2 2.3-1.2 3.8H10l-1.2-3.8z"/><path d="M12 7.5V4M15.2 9.8l3.3-1.1M14 13.6l2 3M10 13.6l-2 3M8.8 9.8 5.5 8.7"/></svg>',
   messages: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.9A8 8 0 1 1 21 12z"/></svg>',
-  more: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2.2"/><circle cx="12" cy="12" r="2.2"/><circle cx="19" cy="12" r="2.2"/></svg>'
+  more: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2.2"/><circle cx="12" cy="12" r="2.2"/><circle cx="19" cy="12" r="2.2"/></svg>',
+  // a training cone: the Sessions door's own mark, on its tab and on the switch to it
+  sessions: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 4h5l3 15.5h-11z"/><path d="M4 19.5h16"/><path d="M8.3 10h7.4M7.4 14.5h9.2"/></svg>'
 };
+// the Teams door's mark is the Game tab's ball; each door has its own icon, shown on the switch (the owner, 2026-10-20)
+const DOOR_ICON = { teams: NAV_ICON.game, sessions: NAV_ICON.sessions };
 function navTabs() {
   // the dot means being played, on any team of hers; the picker or the header names which
-  const out = [{ id: 'home', label: 'Home' }, { id: 'calendar', label: 'Calendar' }, { id: 'game', label: 'Game', live: navGames().some(g => gameStatus(g) === 'live') }];
+  const out = curDoor() === 'sessions'
+    ? [{ id: 'home', label: 'Home' }, { id: 'calendar', label: 'Calendar' }, { id: 'sessions', label: 'Sessions' }]
+    : [{ id: 'home', label: 'Home' }, { id: 'calendar', label: 'Calendar' }, { id: 'game', label: 'Game', live: navGames().some(g => gameStatus(g) === 'live') }];
   // Messages once the club has them (an admin, and a team of hers); the tab is not drawn dead
   if (msgsOn()) out.push({ id: 'messages', label: 'Messages', count: 'tabMsgN' });
   out.push({ id: 'more', label: 'More', count: 'tabMoreN' });
@@ -7852,6 +8033,9 @@ function navTabs() {
 function tabFor(v = ui.view) {
   if (v === 'calendar') return 'calendar';
   if (v === 'inbox' || v === 'thread') return 'messages';
+  // the Sessions door: its Home, and the list of sessions (Fields, fees and hours are Settings' screens, under More)
+  if (v === 'shome') return 'home';
+  if (v === 'sessions') return sessSetTab() ? 'more' : 'sessions';
   if (v === 'game' || v === 'games' || (v === 'formation' && ui.editFid === GAME_SHAPE)) return 'game';
   if (TEAM_VIEWS.includes(v)) return 'home';
   if (v === 'club' && homeView() === 'club') return 'home';
@@ -7881,11 +8065,13 @@ function upView(v = ui.view) {
   // the club's settings screens are Settings' Club section since build 143; the rest hang off Club home
   if (['people', 'admin', 'scheduler', 'regs', 'comply'].includes(v)) return 'setup';
   // fields, fees and hours are Settings' screens (UX-REVIEW-2.md, 7.3); Sessions itself hangs off Club home
-  if (v === 'sessions') return sessSetTab() ? 'setup' : 'club';
+  if (v === 'sessions') return sessSetTab() ? 'setup' : null;
+  // the Sessions door's Home is a tab's own
+  if (v === 'shome') return null;
   if (v === 'tryout') return 'club';
-  if (v === 'setup' || v === 'notes') return homeView();
+  if (v === 'setup' || v === 'notes') return doorHome();
   // staff's My players, under More
-  if (v === 'mine') return homeView();
+  if (v === 'mine') return doorHome();
   // Club home is up from nowhere once it is the Home tab's own screen; otherwise up is Home
   if (v === 'club') return homeView() === 'club' ? null : homeView();
   // a team's own tabs, for staff with several teams: up is the list of them
@@ -7896,7 +8082,7 @@ function upView(v = ui.view) {
 function upLabelFor(up) {
   if (up === ui.view) return ui.view === 'regs' ? 'Back to the programs' : 'Back to the tryouts';
   const name = up === 'setup' ? 'Settings' : up === 'club' ? 'Club home' : up === 'calendar' ? 'the calendar'
-    : up === 'inbox' ? 'Messages' : up === 'season' ? (homeView() === 'season' ? 'Home' : 'the team') : up === 'games' ? 'the games' : VIEW_TITLE[up];
+    : up === 'inbox' ? 'Messages' : up === 'season' ? (homeView() === 'season' ? 'Home' : 'the team') : up === 'games' ? 'the games' : up === 'shome' ? 'Home' : VIEW_TITLE[up];
   return name ? 'Back to ' + name : 'Back';
 }
 // a game's back arrow says where it goes: the screen it was opened from
@@ -7938,9 +8124,14 @@ function titleBar() {
        says which calendar is open, as the admin's All teams always did. */
     main = plain(esc(screenTitle(v) || '')) + clubBtn('tbsub', v === 'calendar' ? (calSel() === 'club' ? 'All teams · ' : 'My calendar · ') : '');
   } else {
-    main = plain(esc(screenTitle(v) || (TEAM_VIEWS.includes(v) ? 'Home' : org))) + clubBtn('tbsub');
+    // the Sessions door says so where the Calendar says which calendar: on the club line, so a glance tells which app she is in
+    main = plain(esc(screenTitle(v) || (TEAM_VIEWS.includes(v) ? 'Home' : org))) + clubBtn('tbsub', curDoor() === 'sessions' && SESSION_VIEWS.includes(v) ? 'Sessions · ' : '');
   }
-  return `${back}<div class="tbmain">${main}</div>`;
+  /* The switch to the other door (DOORS.md): at the end of the row, its icon
+     and its name, for whoever has both doors; nothing for whoever has one. */
+  const other = curDoor() === 'sessions' ? 'teams' : 'sessions';
+  const door = hasDoor('sessions') && hasDoor('teams') ? `<button class="tbdoor" data-act="door" data-d="${other}" aria-label="Switch to ${DOORS[other]}" title="Switch to ${DOORS[other]}">${DOOR_ICON[other]}<span>${DOORS[other]}</span></button>` : '';
+  return `${back}<div class="tbmain">${main}</div>${door}`;
 }
 function tabBar() {
   const cur = tabFor();
@@ -7959,10 +8150,23 @@ function settingsLine() {
   const coachAny = !!me && teams().some(t => isCoach(t.id, me.uid));   // People, on Settings
   return ['You', team() && restricted() !== 'tracker' && !readerRole(restricted()) ? 'this team' : '', canAdmin() ? 'the club: people, registrations, fields' : coachAny ? 'people' : ''].filter(Boolean).join(', ');
 }
+/* The other door, as a row on More and a button on the title row: the door
+   she is not in, with its icon and name, for whoever has both (DOORS.md).
+   Nothing for whoever has one door alone, and the handler refuses a tap at a
+   door she does not have. */
+const SESS_MORE = { fields: 'The places the club trains, and the permits it holds', fees: 'Who has paid for a place, and who still owes', hours: 'What each coach ran this month' };
+function doorRow() {
+  if (!hasDoor('sessions') || !hasDoor('teams')) return '';
+  const to = curDoor() === 'sessions' ? 'teams' : 'sessions';
+  const sub = to === 'sessions' ? sessClubLine() : 'Your teams, games and practices';
+  return `<button class="opt door" data-act="door" data-d="${to}"><span class="dooric">${DOOR_ICON[to]}</span><span><b>${DOORS[to]}</b>
+      <span class="rowsub">${esc(sub)}</span></span></button>`;
+}
 function sheetMore() {
   const org = clubName();
   const b = me ? tabMoreCount() : 0;
   const clubs = knownClubs();
+  const inSess = curDoor() === 'sessions';
   openSheet(`<h3>More</h3>
     ${me && !changesInMessages() ? `<button class="opt spread" data-act="goview" data-v="notes"><span><b>What's new</b>
       <span class="rowsub">Changes to your games and practices${newsFor() ? ', and club activity' : ''}</span></span>${b ? `<span class="pill asking">${b > 9 ? '9+' : b}</span>` : ''}</button>` : ''}
@@ -7970,12 +8174,13 @@ function sheetMore() {
       <span class="rowsub">The club: its teams and sessions</span></button>` : ''}
     ${anyPlayers() && navKind() !== 'family' ? `<button class="opt" data-act="goview" data-v="mine"><b>My players</b>
       <span class="rowsub">${allKidNames().map(esc).join(', ')}</span></button>` : ''}
-    ${canAdmin() && myTeams().length ? `<button class="opt" data-act="schedule"><b>All teams</b>
-      <span class="rowsub">Every team's calendar: this week, what is still to settle, and the Planner</span></button>` : ''}
-    ${canTrain() && (team() || myTeams().length) ? `<button class="opt" data-act="moredrills"><b>Drills</b>
-      <span class="rowsub">The library, the club's and your own: look one up, change it, write a new one</span></button>` : ''}
-    ${canSessions() ? `<button class="opt" data-act="goview" data-v="sessions"><b>Sessions</b>
-      <span class="rowsub">${esc(sessClubLine())}</span></button>` : ''}
+    ${inSess || !(canAdmin() && myTeams().length) ? '' : `<button class="opt" data-act="schedule"><b>All teams</b>
+      <span class="rowsub">Every team's calendar: this week, what is still to settle, and the Planner</span></button>`}
+    ${inSess || !(canTrain() && (team() || myTeams().length)) ? '' : `<button class="opt" data-act="moredrills"><b>Drills</b>
+      <span class="rowsub">The library, the club's and your own: look one up, change it, write a new one</span></button>`}
+    ${inSess && canOffer() ? Object.entries(SESS_SET).map(([k, l]) => `<button class="opt" data-act="sesstab" data-k="${k}"><b>${l}</b>
+      <span class="rowsub">${SESS_MORE[k]}</span></button>`).join('') : ''}
+    ${doorRow()}
     <button class="opt" data-act="goview" data-v="setup"><b>Settings</b>
       <span class="rowsub">${esc(settingsLine())}</span></button>
     ${clubs.length > 1 || canNewClub() ? `<button class="opt" data-act="clubswitch"><b>Clubs</b>
@@ -8018,7 +8223,7 @@ function viewClub() {
     ${canAdmin() && list.length ? goCard('schedule', '', 'Calendar', `Every team · ${esc(schedLine())}`) + clubWeekCard(thisClubWeek())
     : (me || !gated()) && myCalOwn() && !fam ? goCard('goview', ' data-v="mycal"', 'Calendar', esc(myCalLine())) : ''}
     ${anyPlayers() && !fam ? goCard('goview', ' data-v="mine"', 'My players', allKidNames().map(esc).join(', ')) : ''}
-    ${canSessions() ? goCard('goview', ' data-v="sessions"', 'Sessions', esc(sessClubLine())) : ''}
+    ${canSessions() ? goCard('goview', ' data-v="shome"', 'Sessions', esc(sessClubLine())) : ''}
     ${complyCards()}
     ${myTryouts().length ? goCard('goview', ' data-v="tryout"', 'Tryouts to score', `${esc(myTryouts().map(p => p.name).join(', '))} · by bib`) : ''}
     ${list.length ? list.map(t => {
@@ -12274,9 +12479,17 @@ function kidMerged(t, ks, multi) {
    placed, or hers in another club. The cards that were My players' alone. */
 function famNoTeam() {
   const todo = kidCards() + regCards(), away = elsewhereCards();
-  if (!todo && !away) return `<div class="empty"><strong>Nobody linked yet</strong>
+  /* Her children are in the club on no team (placed by a sessions program,
+     booking sessions as the club): the Teams door is nearly empty for her and
+     says so, with the Sessions door one tap away (DOORS.md). The day a child
+     is placed on a team, Home is that team. */
+  const loose = looseKids().filter(kidFamily);
+  const noTeam = loose.length ? `<div class="card"><h2>No team yet</h2>
+    <p class="muted" style="margin:6px 0 0">${esc(wordsAnd(loose.map(c => firstName({ name: kidName(c) }))))} ${loose.length > 1 ? 'are' : 'is'} in the club and not on a team. Games and practices are here once ${loose.length > 1 ? 'they are' : 'she is'} placed on one.</p>
+    ${hasDoor('sessions') ? `<div class="row wrap" style="margin-top:10px"><button class="btn sm" data-act="door" data-d="sessions">Sessions</button></div>` : ''}</div>` : '';
+  if (!todo && !away && !noTeam) return `<div class="empty"><strong>Nobody linked yet</strong>
     A coach links your account to your player, and she shows up here.</div>`;
-  return `<div class="stack">${todo}${away}</div>`;
+  return `<div class="stack">${todo}${noTeam}${away}</div>`;
 }
 
 /* What the season adds up to. Early games predate shot and possession
@@ -15145,12 +15358,12 @@ function coachUids() {
 const isCoachAny = uid => !!uid && coachUids().has(uid);
 /* Families, coaches of any team and admins. A tracker is there to log a game,
    and has no child here to book. */
-const canSessions = () => !gated() || isOwner() || (!!me && (isAdmin(me.uid) || isCoachAny(me.uid) || guardsAnyone()));
+const canSessions = () => !gated() || isOwner() || (!!me && (isAdmin(me.uid) || coachesSessions(me.uid) || guardsAnyone()));
 // who may offer a session at all, and gets the Fields, Fees and Hours tabs
-const canOffer = () => !gated() || canAdmin() || (!!me && isCoachAny(me.uid));
+const canOffer = () => !gated() || canAdmin() || (!!me && coachesSessions(me.uid));
 /* The coach a session names runs it, while she is still a coach; an admin runs
    any. The same two clauses as the rule on booked/$sid. */
-const canRun = s => !!s && (!gated() || canAdmin() || (!!me && s.coach === me.uid && isCoachAny(me.uid)));
+const canRun = s => !!s && (!gated() || canAdmin() || (!!me && s.coach === me.uid && coachesSessions(me.uid)));
 
 /* ---- the sessions ---- */
 /* Any coach may write a session, and the rules check its owner and its kind
@@ -15553,17 +15766,17 @@ function sessWanted() {
   if (!canSessions()) return [];
   const want = ['sessions', 'booked', 'came', 'avail'];
   // coaches' time off is the coaches' and the admins', never a family's
-  if (isAdmin(me.uid) || isCoachAny(me.uid)) want.push('away');
+  if (isAdmin(me.uid) || coachesSessions(me.uid)) want.push('away');
   const all = sessAll();
   // packages, while the club offers them: staff hear all of them, to use one on a place; a family her own children's
   if (packsOn()) {
-    if (isAdmin(me.uid) || isCoachAny(me.uid)) want.push('packs', 'packuse');
+    if (isAdmin(me.uid) || coachesSessions(me.uid)) want.push('packs', 'packuse');
     else for (const { t, p } of myChildren()) want.push(`packs/${t.id}/${p.id}`, `packuse/${t.id}/${p.id}`);
   }
   if (isAdmin(me.uid)) want.push('fees', 'pay');
   else {
     for (const s of all) if (s.coach === me.uid) want.push('fees/' + s.id);
-    if (isCoachAny(me.uid)) want.push('pay/' + me.uid);
+    if (coachesSessions(me.uid)) want.push('pay/' + me.uid);
     for (const { p } of myChildren()) for (const s of all) if (bookOf(s.id, p.id)) want.push('fees/' + s.id + '/' + p.id);
   }
   const open = sessById(sessUi().open);
@@ -15961,6 +16174,74 @@ function viewSessions() {
   return `<div class="stack"><h2>${set ? SESS_SET[set] : 'Sessions'}</h2>${sessNote()}${tabs}${body}</div>`;
 }
 
+/* The Sessions door's Home (DOORS.md, step 2): what is next for her in
+   sessions, by role, built from the pieces the Sessions screen draws and in
+   the card shapes the Teams Home uses, so the suites that hold the frame hold
+   it too. A family: her children's next session as the next-up card, then
+   what she can book, what she owes and what has been (familySessions). A
+   coach: the next session she runs, who is asking for a spot, what is coming,
+   her bookable times this week and her hours this month. An admin: the same
+   across the club, with what is owed. Nothing here that a role may not do:
+   the handlers check canOffer(), canRun() and guardsAnyone() as the Sessions
+   screen's do, and no other child's name on a family's phone. */
+function viewSessHome() {
+  if (!canSessions()) return viewSessions();
+  const staff = canOffer(), kids = myChildren();
+  const body = (staff ? sessStaffHome() : '') + (kids.length ? sessFamilyHome(staff) : '');
+  return `<div class="stack">${sessNote()}${body}</div>`;
+}
+/* A session as the next-up card: a tap opens its sheet, where everything
+   about it is; Directions and Add to your calendar beside it, as a practice's
+   card has them. The family's line says how each of her own children stands. */
+function sessNextCard(s, label, kids = []) {
+  const I = ICS();
+  const when = [relDay(s.date) || dayLabel(s.date), s.start ? niceTime(s.start) : 'time to be confirmed'].join(' · ');
+  const stand = kids.map(({ p }) => { const b = bookOf(s.id, p.id); return b && b.st !== 'out' ? `${firstName(p)}: ${BOOK[b.st].toLowerCase()}` : ''; }).filter(Boolean);
+  const bits = [sessPlace(s), 'with ' + s.coachName, ...stand].filter(Boolean);
+  return `<div class="card calnext" style="--ev:${KIND_HUE.session}"><span class="muted">${esc(label)}</span>
+    <button class="plainbtn" data-act="sessopen" data-id="${esc(s.id)}" style="display:block;width:100%;text-align:left">
+      <div class="spread" style="margin-top:4px"><b style="font-size:19px">${esc(sessTitle(s))}</b><span class="tag session">${SESS_KIND[s.kind]}</span></div>
+      <p style="margin:4px 0 0"><b>${esc(when)}</b></p>
+      ${bits.length ? `<p class="muted" style="margin:2px 0 0">${esc(bits.join(' · '))}</p>` : ''}</button>
+    <div class="row wrap" style="margin-top:10px">
+      ${sessAddress(s) && I ? `<a class="btn quiet sm" href="${esc(I.mapLink(sessAddress(s)))}" target="_blank" rel="noopener">Directions</a>` : ''}
+      ${I ? `<a class="btn quiet sm" href="${esc(I.googleLink(sessIcs(s)))}" target="_blank" rel="noopener">Google Calendar</a>` : ''}
+      <button class="btn quiet sm" data-act="sessics" data-id="${esc(s.id)}">Apple, Outlook or another</button></div></div>`;
+}
+function sessFamilyHome(staff) {
+  const kids = myChildren();
+  const hers = sessAll().filter(s => !sessPast(s) && !s.called && kids.some(({ p }) => ['in', 'wait', 'asked'].includes((bookOf(s.id, p.id) || {}).st)));
+  const next = hers.find(s => kids.some(({ p }) => (bookOf(s.id, p.id) || {}).st === 'in')) || hers[0];
+  return (next ? sessNextCard(next, 'Next session', kids) : '') + familySessions(staff);
+}
+function sessStaffHome() {
+  const all = sessAll(), today = todayStr(), week = addDays(today, 7);
+  const run = all.filter(s => !sessPast(s) && !s.called && canRun(s));
+  const asks = all.filter(s => !sessPast(s) && !s.called && canRun(s))
+    .flatMap(s => bookingsOf(s.id).filter(x => x.st === 'asked').map(x => ({ s, x })));
+  const times = blockAll().filter(b => b.date >= today && b.date <= week && canEditBlock(b) && !b.off);
+  const month = today.slice(0, 7);
+  const hours = hoursFor(month).filter(h => canAdmin() || !gated() || (me && h.uid === me.uid));
+  // what families still owe, across the club, for admins; a coach's Session fees screen keeps her own sessions'
+  const owed = canAdmin() ? all.filter(s => s.price && !s.called).reduce((n, s) => n + bookingsOf(s.id).filter(x => x.st === 'in' && !feeOf(s.id, x.pid) && feesKnown(s.id, x.pid)).length * s.price, 0) : 0;
+  const line = (k, v) => `<button class="prow go" type="button" data-act="sesstab" data-k="${k}" style="grid-template-columns:1fr auto"><span class="pname">${v}</span></button>`;
+  return `${run[0] ? sessNextCard(run[0], canAdmin() ? 'Next session in the club' : 'Your next session') : ''}
+    ${asks.length ? `<div class="card"><h2 style="margin-bottom:0">Asking for a spot</h2><div class="plist">${asks.map(({ s, x }) =>
+      `<button class="prow go" type="button" data-act="sessopen" data-id="${esc(s.id)}" style="grid-template-columns:1fr auto">
+        <span><span class="pname">${esc(whoName(x))}${x.who ? ` <span class="muted">${teamLabel(x.who.t)}</span>` : ''}</span>
+          <span class="psub">${esc([sessTitle(s), dayLabel(s.date) + (s.start ? ' ' + niceTime(s.start) : ''), x.want ? 'wants: ' + x.want : ''].filter(Boolean).join(' · '))}</span></span>
+        <span class="tag wait">Answer</span></button>`).join('')}</div></div>` : ''}
+    <div class="card"><h2 style="margin-bottom:0">Coming up</h2>
+      ${run.length ? sessDays(run.slice(0, 8), false) : `<p class="muted" style="margin:6px 0 0">${canAdmin() ? 'No sessions coming up in the club.' : 'Nothing of yours coming up.'} <b>New session</b> offers a 1-1 or a small group to players from any team.</p>`}
+      ${run.length > 8 ? line('list', `All ${run.length} coming up`) : ''}
+      <div class="row wrap" style="margin-top:10px"><button class="btn sm" data-act="sessnew">New session</button><button class="btn quiet sm" data-act="availnew">Offer a time</button></div></div>
+    ${times.length ? `<div class="card"><h2 style="margin-bottom:0">${canAdmin() ? 'Times families can book this week' : 'Your times this week'}</h2>${availDays(times.slice(0, 20), false, canAdmin())}</div>` : ''}
+    <div class="card"><h2 style="margin-bottom:0">${esc(monthLabel(month))}</h2>
+      ${hours.length ? `<div class="plist">${hours.map(h => `<button class="prow go" type="button" data-act="sesshourscoach" data-v="${esc(h.uid)}" style="grid-template-columns:1fr auto">
+        <span class="pname">${esc(h.name)}</span><span class="pmins">${h.n} session${h.n === 1 ? '' : 's'} · ${hoursWords(h.mins)}</span></button>`).join('')}</div>` : '<p class="muted" style="margin:6px 0 0">No sessions run yet this month. Hours count once a session is over.</p>'}
+      ${owed ? `<p style="margin:8px 0 0"><b>${esc(fmtMoney(owed))}</b> still to be paid by families.</p>` : ''}</div>`;
+}
+
 /* One session in a list. A family's row says how her own children stand; the
    coach's says how full it is and who is asking. */
 function sessRow(s, fam) {
@@ -16108,7 +16389,9 @@ function sessFamilyBlock(s) {
       <button class="btn wide" data-act="sessask" data-id="${esc(s.id)}" data-pid="${esc(p.id)}" style="margin-top:6px">${full ? 'Ask for the waiting list' : 'Ask'}</button></div>`;
   }).filter(Boolean);
   if (!rows.length) return '';
-  return `<div class="rsvpbox"><p class="lbl">${kids.length > 1 ? 'Your children' : 'Your child'}</p>${rows.join('')}
+  // her line to the coach of this session, keyed by the two of them and read by the admins too (DOORS.md)
+  const talk = me && s.coach && myTalk(sdId(me.uid, s.coach)) ? `<button class="btn quiet sm" data-act="sdopen" data-u="${esc(s.coach)}" style="margin-top:8px">Message ${esc(firstName({ name: s.coachName || 'the coach' }))}</button>` : '';
+  return `<div class="rsvpbox"><p class="lbl">${kids.length > 1 ? 'Your children' : 'Your child'}</p>${rows.join('')}${talk}
     ${s.open && !over ? '<p class="muted" style="margin-bottom:0">The coach confirms each place, and you hear here when she does.</p>' : ''}</div>`;
 }
 
@@ -16123,9 +16406,12 @@ function sessPlayersBlock(s) {
     const acts = x.st === 'asked' ? chip(x, 'in', 'Book') + chip(x, 'wait', 'Waitlist') + chip(x, 'no', 'Not this time')
       : x.st === 'wait' ? chip(x, 'in', 'Book') + chip(x, 'out', 'Take off')
         : x.st === 'in' ? chip(x, 'out', 'Take off') : chip(x, 'in', 'Book');
+    // the child's family, one chip each: a conversation keyed by the two of them (DOORS.md)
+    const fams = Object.keys((((x.who || {}).p) || {}).guardians || {}).filter(u => me && u !== me.uid && myTalk(sdId(me.uid, u)))
+      .map(u => `<button class="chip" type="button" data-act="sdopen" data-u="${esc(u)}">Message ${esc(firstName({ name: familyName(u) }))}</button>`).join('');
     return `<div class="rsvprow"><span>${x.who ? `<b>${esc(shirtOf(x.who.p))}</b> ` : ''}${esc(whoName(x))}
       <span class="rowsub">${esc([x.who ? x.who.t.name : '', status(x), x.want ? 'wants: ' + x.want : ''].filter(Boolean).join(' · '))}</span></span>
-      ${over ? '' : `<div class="chips rsvpchips">${acts}</div>`}</div>`;
+      ${over && !fams ? '' : `<div class="chips rsvpchips">${over ? '' : acts}${fams}</div>`}</div>`;
   }).join('');
   const n = nIn(s.id);
   return `<div class="rsvpbox"><div class="spread"><p class="lbl" style="margin:0">Players — ${s.kind === 'one' ? (n ? 'booked' : 'free') : `${n} of ${s.cap}`}</p>
@@ -16239,7 +16525,7 @@ function sessFormEdit(s) {
 /* Who a session can be run by: the club's coaches and admins, by name. Only an
    admin is offered the choice; a coach runs what she makes. */
 function sessCoaches() {
-  const ids = new Set([...coachUids(), ...Object.keys(acc().admins || {})]);
+  const ids = new Set([...coachUids(), ...Object.keys(acc().admins || {}), ...Object.keys(acc().sessionCoaches || {})]);
   if (me) ids.add(me.uid);
   return [...ids].map(u => [u, personName(u) || (me && u === me.uid ? whoAmI() : '') || 'Someone']).sort((a, b) => a[1].localeCompare(b[1]));
 }
@@ -16394,7 +16680,7 @@ function sessHoursView() {
     const r = payOf(h.uid), pay = payFor(h);
     return [h.name, h.n, (h.mins / 60).toFixed(2), h.one, h.group, r ? `${fmtMoney(r.rate)}/${r.per}` : '', pay == null ? '' : fmtMoney(pay)].join('\t');
   })].join('\n');
-  const coaches = canAdmin() ? sessCoaches().filter(([uid]) => isCoachAny(uid) || payOf(uid)) : [];
+  const coaches = canAdmin() ? sessCoaches().filter(([uid]) => coachesSessions(uid) || payOf(uid)) : [];
   return `<div class="card"><div class="spread">
       <button class="stepbtn" data-act="sessmonth" data-v="-1" aria-label="Previous month">‹</button>
       <b>${esc(monthLabel(u.month))}</b>
@@ -17034,7 +17320,7 @@ function saveSessForm() {
   const f = sessForm; if (!f) return;
   if (!okDay(f.date)) { toast('Pick a date'); return; }
   if (!hm(f.start) || !hm(f.end)) { toast('Give it a start and an end — the hours and the clash check need both'); return; }
-  if (!canAdmin() && gated() && !(me && isCoachAny(me.uid))) { closeSheet(); toast('That is for coaches and admins'); return; }
+  if (!canAdmin() && gated() && !(me && coachesSessions(me.uid))) { closeSheet(); toast('That is for coaches and admins'); return; }
   // a coach runs what she makes; only an admin names somebody else
   const coach = canAdmin() && f.coach ? f.coach : (me ? me.uid : (f.coach || 'device'));
   const ns = sessFromForm({ ...f, coach });
@@ -17129,7 +17415,7 @@ const blockSeries = b => (b.series ? blockAll().filter(x => x.series === b.serie
 const blockPlace = b => { const f = fieldById(b.field); return f ? f.name + (b.place ? ', ' + b.place : '') : b.place; };
 const blockLabel = b => b.title || (b.kind === 'group' ? `Small group, ${b.cap} places` : '1-1s');
 // the same two clauses as the rule on avail/$bid, and as canRun() for a session
-const canEditBlock = b => !!b && (!gated() || canAdmin() || (!!me && b.coach === me.uid && isCoachAny(me.uid)));
+const canEditBlock = b => !!b && (!gated() || canAdmin() || (!!me && b.coach === me.uid && coachesSessions(me.uid)));
 const minsNow = () => { const d = new Date(nowMs()); return d.getHours() * 60 + d.getMinutes(); };
 const startMs = s => Number(s.t0) || slotAt(s.date, s.start || '00:00');
 const hoursUntil = s => (startMs(s) - nowMs()) / 3600000;
@@ -17474,7 +17760,7 @@ function saveBlockForm() {
   if (!start || !end || minOf(end) <= minOf(start)) { toast('Give it a start, and an end after it'); return; }
   if (minOf(end) - minOf(start) < f.len) { toast(`Shorter than one ${f.len}-minute slot`); return; }
   const coach = canAdmin() && f.coach ? f.coach : (me ? me.uid : (f.coach || 'device'));
-  if (gated() && !canAdmin() && !(me && coach === me.uid && isCoachAny(me.uid))) { closeSheet(); toast('Coaches offer their own times; an admin anyone’s'); return; }
+  if (gated() && !canAdmin() && !(me && coach === me.uid && coachesSessions(me.uid))) { closeSheet(); toast('Coaches offer their own times; an admin anyone’s'); return; }
   const lo = Number(f.lo), hi = Number(f.hi);
   const ages = lo && hi ? [Math.min(lo, hi), Math.max(lo, hi)] : lo ? [lo, 19] : hi ? [4, hi] : null;
   const price = Number(String(f.price || '').replace(/[^0-9.]/g, '')) || 0;
@@ -17656,7 +17942,7 @@ const myCalOwn = () => myCalTeams().length > 0 || youClubs().length > 0
 function myCalFilters() {
   const out = [['all', 'Everything']];
   const kids = myPlayers();
-  const staff = !!me && (myRoleTeams().size > 0 || isCoachAny(me.uid) || blockAll().some(b => b.coach === me.uid));
+  const staff = !!me && (myRoleTeams().size > 0 || coachesSessions(me.uid) || blockAll().some(b => b.coach === me.uid));
   if (kids.length > 1 || (kids.length && staff)) for (const { p } of kids) out.push(['p:' + p.id, esc(firstName(p))]);
   if (kids.length && staff) out.push(['me', 'My coaching']);
   // a chip per club, once there is more than one: the person's calendar, not this club's
@@ -18272,7 +18558,7 @@ function alertsCard(where) {
    Whoever is sharing keeps it, to stop. */
 function youStaff() {
   if (!me) return false;
-  if (canAdmin() || isCoachAny(me.uid) || sessAll().some(s => s.coach === me.uid) || blockAll().some(b => b.coach === me.uid)) return true;
+  if (canAdmin() || coachesSessions(me.uid) || sessAll().some(s => s.coach === me.uid) || blockAll().some(b => b.coach === me.uid)) return true;
   return youClubs().some(([, c]) => { const a = ((c.ws || {}).access) || {}; return !!((a.admins || {})[me.uid] || (a.coachIndex || {})[me.uid]); });
 }
 function youShareCard() {
@@ -18691,7 +18977,7 @@ function awayDuring(u, date, a, b) {
   for (const r of awayOf(u)) for (const [x, y] of awaySpans(r, date)) if (x < b && a < y) return r;
   return null;
 }
-const awayOn = () => !!me && (!gated() || isAdmin(me.uid) || isCoachAny(me.uid));
+const awayOn = () => !!me && (!gated() || isAdmin(me.uid) || coachesSessions(me.uid));
 
 /* Where a coach is at a given time: free, due somewhere (and where), or off
    (time off, or called out of the one thing she'd be at). Only people who
@@ -21346,7 +21632,7 @@ function viewPeople() {
         <td class="dim">${when(u.at)}</td>
         <td class="right">${none
         ? `<button class="btn sm" data-act="personedit" data-uid="${u.uid}">Let in</button>`
-        : `${isCoachAny(u.uid) || isAdmin(u.uid) ? `<button class="btn quiet sm" data-act="personcal" data-uid="${u.uid}">Calendar</button> ` : ''}<button class="btn quiet sm" data-act="personedit" data-uid="${u.uid}">Roles</button>`}</td>
+        : `${coachesSessions(u.uid) || isAdmin(u.uid) ? `<button class="btn quiet sm" data-act="personcal" data-uid="${u.uid}">Calendar</button> ` : ''}<button class="btn quiet sm" data-act="personedit" data-uid="${u.uid}">Roles</button>`}</td>
       </tr>`).join('') || '<tr><td colspan="5" class="dim">Nobody matches that filter.</td></tr>'}</tbody>
     </table></div>
 
@@ -21389,6 +21675,7 @@ function roleTags(uid, scope) {
   const by = {};
   for (const v of rolesHeld(uid, scope)) (by[v.r] = by[v.r] || new Set()).add(v.x.name || 'Team');
   return (isViewer(uid) && !isAdmin(uid) ? `<span class="tag">${esc(INVITE_ROLES.viewer)}<i>every team</i></span>` : '')
+    + (isSessionCoach(uid) && !isAdmin(uid) ? `<span class="tag">${esc(INVITE_ROLES.sesscoach)}<i>sessions</i></span>` : '')
     + ['coach', 'tracker', 'helper', 'parent', 'player', 'fan'].filter(r => by[r]).map(r => {
     const names = [...by[r]];
     const what = names.length > 2 ? `${names.length} teams` : names.join(', ');
@@ -21435,7 +21722,8 @@ function sheetPersonRoles(uid) {
     <div class="chips" style="margin-bottom:14px">
       <button class="chip" type="button" data-act="setrole" data-uid="${uid}" data-r="admin" aria-pressed="${isAdmin(uid)}">Club admin</button>
       ${isAdmin(uid) && (isClubOwner(uid) || (me && isClubOwner(me.uid))) ? `<button class="chip" type="button" data-act="setowner" data-uid="${uid}" aria-pressed="${isClubOwner(uid)}">Club owner</button>` : ''}
-      ${isAdmin(uid) ? '' : `<button class="chip" type="button" data-act="setviewer" data-uid="${uid}" aria-pressed="${isViewer(uid)}">Club viewer</button>`}
+      ${isAdmin(uid) ? '' : `<button class="chip" type="button" data-act="setviewer" data-uid="${uid}" aria-pressed="${isViewer(uid)}">Club viewer</button>
+      <button class="chip" type="button" data-act="setsesscoach" data-uid="${uid}" aria-pressed="${isSessionCoach(uid)}">Session coach</button>`}
     </div>
     ${isViewer(uid) && !isAdmin(uid) ? '<p class="muted" style="margin-top:-6px">Reads every team\u2019s calendar and games with names. No emails, no log, no messages, no answering, no changes.</p>' : ''}
     ${isClubOwner(uid) ? `<p class="muted" style="margin-top:-6px">${me && uid === me.uid ? 'You own the club: only an owner takes an admin away. Tap Club owner to step down once someone else owns it too.' : 'Owns the club. Only she can step down as owner.'}</p>`
@@ -24551,7 +24839,7 @@ function onAct(e) {
   // two colleagues: both must be coaches or admins here, as the rule says
   if (a === 'sdopen') {
     const cid = me ? sdId(me.uid, d.u) : '';
-    if (!msgFor || !d.u || d.u === (me && me.uid) || !myStaffChat(cid)) { toast('Coaches and admins write to each other here'); return; }
+    if (!msgFor || !d.u || d.u === (me && me.uid) || !(myStaffChat(cid) || myTalk(cid))) { toast(me && d.u && (staffUid(d.u) || talkStaff(me.uid)) ? 'Coaches and admins write to each other here' : 'You can message the coach of a session your child is in, and the coaches of her team'); return; }
     closeSheet(); ui.view = 'thread'; ui.thread = { cid }; render(); return;
   }
   if (a === 'postnew') { if (!noticeTeams().length) { toast('Only a team\u2019s coaches, helpers and the admins post notices'); return; } sheetPost(ui.postTid || ui.teamId); return; }
@@ -24586,7 +24874,7 @@ function onAct(e) {
   if (a === 'msgsend') {
     const el = $('#msgText'), text = String((el && el.value) || '').trim();
     if (d.cid) {
-      if (!msgFor || !myStaffChat(d.cid)) { toast('This conversation is not yours to write in'); return; }
+      if (!msgFor || !(myStaffChat(d.cid) || myTalk(d.cid))) { toast('This conversation is not yours to write in'); return; }
       if (!text) return;
       queueMsg('sd', d.cid, null, text.slice(0, MSG_MAX));
       if (ui.msgDraft) delete ui.msgDraft['sd/' + d.cid];
@@ -24697,6 +24985,15 @@ function onAct(e) {
      several (UX-REVIEW-2.md, 6.3). Game is the list of her games
      (viewGames, UX-REVIEW-3.md, 11.1), or the game itself when exactly one
      of hers is being played and she is not already on it. */
+  /* The switch between the two doors (DOORS.md): to that door's Home, and
+     remembered. Refused for a door she does not have, whatever the button
+     said. */
+  if (a === 'door') {
+    const to = DOORS[d.d] ? d.d : 'teams';
+    if (!hasDoor(to)) { closeSheet(); toast('Sessions are for coaches, admins and families'); render(); return; }
+    ui.door = to; ui.view = to === 'sessions' ? 'shome' : homeView(); ui.thread = null;
+    closeSheet(); render(); toTop(); return;
+  }
   if (a === 'tab') {
     closeSheet();
     const k = d.tab || d.v;
@@ -24704,9 +25001,12 @@ function onAct(e) {
     if (k === 'calendar') { ui.view = 'calendar'; }
     else if (k === 'messages') { ui.view = 'inbox'; ui.thread = null; }
     else if (k === 'home') {
-      if (homeView() === 'club') ui.view = 'club';
+      if (curDoor() === 'sessions') ui.view = 'shome';
+      else if (homeView() === 'club') ui.view = 'club';
       else if (tabFor() !== 'home' || ui.view === 'game') ui.view = 'season';
     }
+    // the Sessions door's third tab: the list of sessions, a tap on it from one of Settings' screens too
+    else if (k === 'sessions') { if (!canSessions()) { toast('Sessions are for coaches, admins and families'); return; } ui.view = 'sessions'; sessUi().tab = SESS_TABS[sessUi().tab] ? sessUi().tab : 'list'; }
     else if (k === 'game') {
       const live = navGames().filter(g => gameStatus(g) === 'live');
       if (live.length === 1 && !(ui.view === 'game' && ui.matchId === live[0].id)) openNavGame(live[0]);
@@ -24817,6 +25117,16 @@ function onAct(e) {
     ui.inv = f; sheetInvite(); return;
   }
   if (a === 'invitemake') { makeInvite(); return; }
+  // a session coach, named by an admin as a viewer is (DOORS.md, *A coach of no team*)
+  if (a === 'setsesscoach') {
+    if (!canAdmin()) { toast('Club admins only'); return; }
+    const on = (acc().sessionCoaches || {})[d.uid];
+    logAccess(on ? 'removed session coach' : 'made session coach', d.uid);
+    if (on) { forgetInvite(on); drop(`access/sessionCoaches/${d.uid}`); }
+    else commit(`access/sessionCoaches/${d.uid}`, true);
+    syncIndex(d.uid);
+    sheetPersonRoles(d.uid); return;
+  }
   if (a === 'setviewer') {
     if (!canAdmin()) { toast('Club admins only'); return; }
     const on = (acc().viewers || {})[d.uid];
@@ -26568,6 +26878,8 @@ function uiToHash() {
   if (ui.view === 'thread' && ui.thread) return `#/messages/${ui.thread.tid}/${ui.thread.fam}`;
   if (ui.view === 'setup') return '#/settings';
   if (ui.view === 'sessions') { const tb = (ui.sess || {}).tab; return '#/training' + (tb && tb !== 'list' && (SESS_TABS[tb] || SESS_SET[tb]) ? '/' + tb : ''); }
+  // the Sessions door's Home (DOORS.md); #/training stays the list
+  if (ui.view === 'shome') return '#/sessions';
   return '#/';
 }
 
@@ -26604,6 +26916,7 @@ function hashToUi() {
   }
   /* #/training/fields is a tab; #/training/{id} is one session, from a calendar
      file or a message, opened once the screen has drawn. */
+  if (p[0] === 'sessions') { ui.view = 'shome'; return true; }
   if (p[0] === 'training') {
     ui.view = 'sessions';
     const u = sessUi();
@@ -26645,7 +26958,8 @@ function hashToUi() {
 let landHome = false;
 function landNow() {
   if (!landHome) return;
-  if (navKind() === 'family') { landHome = false; ui.view = homeView(); ui.thread = null; return; }
+  // the door she last stood in, or where she starts (DOORS.md): the screen being left behind does not decide it
+  if (navKind() === 'family') { landHome = false; ui.door = ui.door && hasDoor(ui.door) ? ui.door : defaultDoor(); ui.view = ui.door === 'sessions' ? 'shome' : homeView(); ui.thread = null; return; }
   // nothing more is coming to change her mind: no club to read, or it has been read
   if (wsRead || !fbConfig().apiKey) landHome = false;
 }

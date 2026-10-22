@@ -175,6 +175,10 @@ console.log('\n--- the labels, as GLOSSARY.md names them ---');
   check('the bar: Home · Calendar · Game · Messages · More for staff', A.navTabs().map(t => t.label).join(' · '), 'Home · Calendar · Game · Messages · More');
   as('mum', 'mine');
   check('— and the same for a family (UX-REVIEW-2.md, 9.1)', A.navTabs().map(t => t.label).join(' · '), 'Home · Calendar · Game · Messages · More');
+  // the Sessions door's bar (DOORS.md): the same for everyone standing in it
+  as('jaz', 'sessions');
+  check('— in the Sessions door, Home · Calendar · Sessions · Messages · More', A.navTabs().map(t => t.label).join(' · '), 'Home · Calendar · Sessions · Messages · More');
+  check('— and the two doors are Teams and Sessions', Object.values(A.DOORS).join(' · '), 'Teams · Sessions');
   check('— Live feed is gone: the play-by-play is Live for everyone', /'Live feed'|>Live feed</.test(src0), false);
   check('who runs the club is a Club admin', A.ROLE_LABEL.admin, 'Club admin');
   check('a 1-1 on the calendar is a Session', A.CAL_KIND.session, 'Session');

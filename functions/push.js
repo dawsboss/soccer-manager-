@@ -199,16 +199,48 @@ async function onStaff(env, params, v) {
   const pair = String(cid).split('~');
   if (pair.length !== 2 || pair.some(u => !/^[^.#$\[\]\/~]{1,128}$/.test(u)) || pair[0] === pair[1] || !pair.includes(v.by)) return none;
   const A = (await where(env.get, code)).access;
-  const [retired, admins, coachIndex] = await Promise.all([
-    env.get('retired/' + code), env.get(A + '/admins'), env.get(A + '/coachIndex')
+  const [retired, admins, coachIndex, sessionCoaches] = await Promise.all([
+    env.get('retired/' + code), env.get(A + '/admins'), env.get(A + '/coachIndex'), env.get(A + '/sessionCoaches')
   ]);
   if (retired) return none;
-  const staff = u => has(admins, u) || has(coachIndex, u);
+  // a session coach is a colleague too (DOORS.md; rules version 35)
+  const staff = u => has(admins, u) || has(coachIndex, u) || has(sessionCoaches, u);
   if (!pair.every(staff)) return none;
   const other = pair.find(u => u !== v.by);
   const people = new Set([other]);
   const list = await messagesFor(env, people, () => ({
     title: v.byName || 'A colleague', body: short(v.text), tag: id, code, hash: `#/messages/with/${v.by}`, urgent: ''
+  }), 'msg');
+  return { to: [other], ...(await deliver(env, list)) };
+}
+
+/* A conversation keyed by people, talk/{code}/{a}~{b}/m/{id} (DOORS.md; the
+   owner, 2026-10-20): the staffdm shape for a pair that is not two
+   colleagues, a session's coach and a child's family or an admin and the
+   family of a child on no team. The rule's readers are the two, both in the
+   club's index with at least one of them staff for this (an admin, a coach of
+   any team, a team helper or a session coach), and nobody else (the owner,
+   2026-10-22: the people in a message are the only people who open it). The
+   one person told is the other of the pair, never the author. A player's own
+   sign-in is never in one (playerIndex, rules version 36), on the rule's word
+   and this one's alike. */
+async function onTalk(env, params, v) {
+  const none = { to: [], sent: 0, failed: 0, removed: [] };
+  if (!v || typeof v !== 'object' || !v.by || typeof v.text !== 'string' || !v.text || !params || !params.code || !params.cid || !params.id) return none;
+  const { code, cid, id } = params;
+  const pair = String(cid).split('~');
+  if (pair.length !== 2 || pair.some(u => !/^[^.#$\[\]\/~]{1,128}$/.test(u)) || pair[0] === pair[1] || !pair.includes(v.by)) return none;
+  const A = (await where(env.get, code)).access;
+  const [retired, admins, coachIndex, helperIndex, sessionCoaches, index, playerIndex] = await Promise.all([
+    env.get('retired/' + code), env.get(A + '/admins'), env.get(A + '/coachIndex'), env.get(A + '/helperIndex'), env.get(A + '/sessionCoaches'), env.get(A + '/index'), env.get(A + '/playerIndex')
+  ]);
+  if (retired) return none;
+  const staff = u => has(admins, u) || has(coachIndex, u) || has(helperIndex, u) || has(sessionCoaches, u);
+  // never a player's own sign-in (playerIndex, rules version 36): the rule refuses the pair, so nobody is told
+  if (!pair.every(u => has(index, u)) || pair.some(u => has(playerIndex, u)) || !pair.some(staff)) return none;
+  const other = pair.find(u => u !== v.by);
+  const list = await messagesFor(env, new Set([other]), () => ({
+    title: v.byName || 'Someone', body: short(v.text), tag: id, code, hash: `#/messages/with/${v.by}`, urgent: ''
   }), 'msg');
   return { to: [other], ...(await deliver(env, list)) };
 }
@@ -539,4 +571,4 @@ async function onFollowed(env, params, what, id, was) {
   return res;
 }
 
-module.exports = { onFollowed, LIVE_MS, FT_FRESH_MS, onNotice, onMessage, onStaff, onEntry, onGameField, messagesFor, deliver, calNews, calSig, whenOf, teamReaders, noticeReaders, threadReaders, teamFacts, BODY_MAX, BATCH, SOON_DAYS, GAME_FIELDS };
+module.exports = { onFollowed, LIVE_MS, FT_FRESH_MS, onNotice, onMessage, onStaff, onTalk, onEntry, onGameField, messagesFor, deliver, calNews, calSig, whenOf, teamReaders, noticeReaders, threadReaders, teamFacts, BODY_MAX, BATCH, SOON_DAYS, GAME_FIELDS };

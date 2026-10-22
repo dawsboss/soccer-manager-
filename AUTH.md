@@ -487,6 +487,10 @@ Decided 2026-10-09: the coach's notes on a child (`note`, `rating`, `pairs`, `av
 
 **Built** (build 116, rules version 15), as written above, with two details. The phone sends the notes there a field at a time and only the fields a write carries (`clubWrites()`), so a whole team saved from a phone that has not read the notes yet, or may not, never wipes them; and notes still on a record from before are moved by the first phone of that team's coach or an admin to open the club (`moveCoachNotes()`: written to `coachNotes` first, then taken off the record, never overwriting a newer note), as `movePlans()` moved old plans. A family's or tracker's phone drops anything of the four it finds on a record. `moveClub` lays them out the same way for a club still on the old tree.
 
+### Session coaches, as built
+
+**Built** (build 181, rules version 35), as `DOORS.md`, *A coach of no team*, lays out: `access/sessionCoaches/{uid}`, named by an admin as a viewer is (People's chip or a club-wide invite, role `sesscoach`), indexed like everyone (`hasAnyRole()`, the server's `hasRole()` and `accessSessionCoach`). Every training rule that took a coach of any team (`coachIndex`) takes her too, and so do the squad and children reads (names and ages, as a viewer reads squads), `names/`, `staffdm` and `talk`; nothing on a team, `members`, `coachNotes` or `practices` does. On the phone she is `coachesSessions()` wherever a coach of any team was asked for about sessions, and `sessOnly()` gives her the Sessions door alone.
+
 ### Club viewers, as built
 
 **Built** (build 118, rules version 17), on `orgs/` only, with these details:

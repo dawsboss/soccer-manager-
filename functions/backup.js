@@ -9,7 +9,7 @@
    What is kept of a club: everything the club holds under orgs/{code}
    (teams, squads, the coach's notes, games, answers, children's records
    and all), its training records (training/{code}), its notices and
-   conversations (board/, dm/, staffdm/) and the admin's list of invites
+   conversations (board/, dm/, staffdm/, talk/) and the admin's list of invites
    (clubInvites/). The bucket is the project's, private, readable with
    Firebase credentials alone: nothing is ever written to public/, and no
    phone reads a backup. A family's care details are in it, which a phone's
@@ -38,7 +38,7 @@ const dayStr = ms => new Date(ms).toISOString().slice(0, 10);
 async function clubDoc(env, code, now) {
   const parts = {
     club: `orgs/${code}`, training: `training/${code}`, board: `board/${code}`, dm: `dm/${code}`,
-    staffdm: `staffdm/${code}`, clubInvites: `clubInvites/${code}`
+    staffdm: `staffdm/${code}`, talk: `talk/${code}`, clubInvites: `clubInvites/${code}`
   };
   const out = { code, savedAt: now, by: 'server' };
   for (const [k, p] of Object.entries(parts)) {

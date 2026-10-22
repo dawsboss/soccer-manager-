@@ -52,7 +52,9 @@ const keys = o => Object.keys(o && typeof o === 'object' ? o : {});
 const STAFF_KEY = { coach: 'coaches', tracker: 'trackers', helper: 'helpers' };
 const TEAM_ROLES = ['coach', 'tracker', 'helper', 'parent', 'player', 'fan'];
 // INVITE_ROLES and ROLE_LABEL from app.js, for the log
-const ROLE_NAME = { coach: 'Coach', tracker: 'Tracker', helper: 'Team helper', parent: 'Parent', viewer: 'Club viewer', player: 'Player', fan: 'Fan' };
+const ROLE_NAME = { coach: 'Coach', tracker: 'Tracker', helper: 'Team helper', parent: 'Parent', viewer: 'Club viewer', sesscoach: 'Session coach', player: 'Player', fan: 'Fan' };
+// the roles for the whole club, with no team to name (a viewer, and a session coach: DOORS.md)
+const CLUB_ROLES = ['viewer', 'sesscoach'];
 const clip = (s, n) => String(s == null ? '' : s).slice(0, n);
 const seatOrder = (a, b) => Number(a.slice(1)) - Number(b.slice(1));
 // randId() from app.js, on the server's own generator: a club code is the whole of nobody's access, but it must never be guessed or taken
@@ -86,7 +88,7 @@ async function redeem(env, uid, ask, now) {
   const why0 = inviteStatus(v0, uid, me, now);
   if (why0) return { ok: false, why: why0 };
   const ws = v0.ws, role = v0.role;
-  if (!okKey(ws) || !(TEAM_ROLES.includes(role) || role === 'viewer')) return { ok: false, why: 'gone' };
+  if (!okKey(ws) || !(TEAM_ROLES.includes(role) || CLUB_ROLES.includes(role))) return { ok: false, why: 'gone' };
   if (TEAM_ROLES.includes(role) && !okKey(v0.team)) return { ok: false, why: 'gone' };
   if (['parent', 'player', 'fan'].includes(role) && !okKey(v0.player)) return { ok: false, why: 'gone' };
   const [retired, moving] = await Promise.all([env.get('retired/' + ws), env.get('serverState/moving/' + ws)]);
@@ -142,6 +144,7 @@ async function redeem(env, uid, ask, now) {
     else if (role === 'player') patch[`${pl}/self/${uid}`] = id;
     else if (role === 'fan') { patch[`${pl}/fans/${uid}`] = id; patch[`${pl}/fanNames/${uid}`] = clip(name || email || 'A fan', 80); }
     else if (role === 'viewer') patch[`${A}/viewers/${uid}`] = id;
+    else if (role === 'sesscoach') patch[`${A}/sessionCoaches/${uid}`] = id;
     else patch[`${A}/teams/${v.team}/${STAFF_KEY[role]}/${uid}`] = id;
     // an entry already there keeps its value: the rule checked it when it was written
     if (!has(acc.index, uid)) patch[`${A}/index/${uid}`] = id;

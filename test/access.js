@@ -88,7 +88,7 @@ const rest = S => canon({ ...S.at('workspaces/CLUB'), children: null, teams: noC
     const S = server();
     deepEq('one per place a role lives', Object.keys(S.triggers).filter(n => /^access/.test(n)).sort(), 
       // on orgs/, named as they were while clubs moved there (functions/index.js, onClub()); a child in the club has its own
-      ['accessAdminOrgs', 'accessChild', 'accessFansOrgs', 'accessGuardiansOrgs', 'accessSelfOrgs', 'accessStaffOrgs', 'accessViewer']);
+      ['accessAdminOrgs', 'accessChild', 'accessFansOrgs', 'accessGuardiansOrgs', 'accessSelfOrgs', 'accessSessionCoach', 'accessStaffOrgs', 'accessViewer']);
     // and who runs the club is told (adminwatch.js, test/owners.js)
     deepEq('an admin given', (await S.wouldWake(W + 'access/admins/new', true)).sort(), ['accessAdmin', 'watchAdmin']);
     // the share pages wake on play and on a player (mirror.js, test/mirror.js); what is asked here is the tables
@@ -277,10 +277,12 @@ const rest = S => canon({ ...S.at('workspaces/CLUB'), children: null, teams: noC
     const S = server();
     await S.fire(W + 'teams/t1/players/p2/self/rosa', 'inv_r');
     check('a player given her own sign-in: teamPlayers names her record', A_(S, 'teamPlayers/t1/rosa'), 'p2');
+    check('— and playerIndex her team, so a root-level rule knows her account is a child\'s (DOORS.md)', A_(S, 'playerIndex/rosa'), 't1');
     check('in the club', A_(S, 'index/rosa'), true);
     check('never a family', A_(S, 'teamParents/t1/rosa'), null);
     await S.fire(W + 'teams/t1/players/p1/self/ella', null);
     check('taken away: out of teamPlayers', A_(S, 'teamPlayers/t1/ella'), null);
+    check('— and off playerIndex', A_(S, 'playerIndex/ella'), null);
     check('and the club', A_(S, 'index/ella'), null);
     check('her parents keep theirs', A_(S, 'teamParents/t1/mum'), 'p1');
   }
@@ -508,6 +510,29 @@ const rest = S => canon({ ...S.at('workspaces/CLUB'), children: null, teams: noC
     check('a viewer taken away leaves the index', !!S.at(IX('dee')), false);
     check('— and her bookmark', !!S.at('userOrgs/dee/VC'), false);
     check('— and the invite she came by goes', !!S.at('invites/inv_dee'), false);
+  }
+
+  console.log('--- a session coach, a coach of no team (DOORS.md) ---');
+  {
+    const O = 'orgs/SC/';
+    const S = makeServer({
+      orgs: { SC: {
+        access: { admins: { adm: true }, index: { adm: true }, teams: { t1: { coaches: {} } } },
+        org: { name: 'Sessions FC' }, members: {}, teams: { t1: { id: 't1', name: 'Flight' } }, squad: { t1: {} }
+      } },
+      userOrgs: {},
+      invites: { inv_gk: { ws: 'SC', role: 'sesscoach' } }
+    });
+    S.loadFunctions();
+    const IX = u => 'workspaces/SC/access/index/' + u;
+    await S.fire(O + 'access/sessionCoaches/gk', 'inv_gk');
+    check('a session coach given: she is indexed', S.at(IX('gk')), true);
+    check('— and bookmarked', !!S.at('userOrgs/gk/SC'), true);
+    check('— and on no coach index: she coaches no team', !!S.at('workspaces/SC/access/coachIndex/gk'), false);
+    await S.fire(O + 'access/sessionCoaches/gk', null);
+    check('taken away, she leaves the index', !!S.at(IX('gk')), false);
+    check('— and her bookmark', !!S.at('userOrgs/gk/SC'), false);
+    check('— and the invite she came by goes', !!S.at('invites/inv_gk'), false);
   }
 
   console.log('--- the same answer the phones give ---');

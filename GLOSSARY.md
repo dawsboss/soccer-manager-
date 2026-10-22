@@ -16,6 +16,7 @@ secretary already has.
 | Concept | Word | Not |
 |---|---|---|
 | The bar at the bottom (one for everyone since build 153) | **Home** · **Calendar** · **Game** · **Messages** · **More** | Team (the tab), Club, Season, Live |
+| The two doors (DOORS.md; build 179) | **Teams** (the season) and **Sessions** (the business), each with its own bar: in Sessions **Home** · **Calendar** · **Sessions** · **Messages** · **More** | Training (as the door; it is the team's tab), Business, Academy, Mode |
 | A team's own tabs | **Season** · **Players** · **Training** | Squad, Roster, Practice (the tab) |
 | Season's own screens (build 146) | **Stats** · **Minutes** · **Attendance** | Players (the minutes table; Players is the tab), Register |
 | A game's lineup card | **Lineup** | Snapshots (a snapshot is one picture of it, in prose only) |
@@ -29,6 +30,7 @@ secretary already has.
 | What a coach plans for a practice | **plan** (**Plans**) | Practice plan (in a label), session plan |
 | The club's week laid out by field, for admins and coaches (build 163) | **Scheduler** | Planner (a coach already has a practice plan and a game plan), plans, Club schedule |
 | Who runs the club | **Club admin** (**admin** in prose) | Org admin, Club administrator |
+| A coach the club pays for 1-1s and groups who runs no team (DOORS.md; build 181) | **Session coach** | Outside trainer, Trainer, Private coach, Coach of no team (in a label) |
 | The one who can take an admin away | **Club owner** | Owner (alone, the app owner is "the app owner") |
 | The club's one place for settings | **Settings** | Your settings, Club settings, Club admin (the screen), Team set-up |
 | The club's own details | **Club details** | Club settings |

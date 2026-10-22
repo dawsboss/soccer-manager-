@@ -236,7 +236,7 @@ const EXPORTS = `{
   msgTeams, staffTeams, famTeams, msgOn, unreadCount, notices, threadMsgs, threadUnread,
   families, guardianEmails, childrenOf, viewInbox, viewThread, watchMessages, sheetPostShare,
   get msgs() { return msgs }, get msgFor() { return msgFor },
-  msgUnread, notesUnread, colleagues, sdId, convMsgs, msgState, viewNotes, msgPeople, pickMatches, pickListHtml, get online() { return online }, set online(v) { online = v },
+  msgUnread, notesUnread, colleagues, sdId, convMsgs, msgState, viewNotes, msgPeople, pickMatches, pickListHtml, pickGroups, talkPartners, cidRoot, myTalk, talkStaff, isPlayerUid, syncPlayerIndex, playerTeamOf, get online() { return online }, set online(v) { online = v },
   /* team links and squad invites */
   get join() { return join }, set join(v) { join = v }, joinScreen, joinLink, claimMatches, pendingClaims, joinCard,
   /* training sessions */
@@ -253,6 +253,10 @@ const EXPORTS = `{
   get you() { return you }, busyOf, myFeedDoc, myFeedId, feedItem, youCalItems, youBusy, youClubs, elsewhereOn, sharing, sheetPersonCal, viewScope, watchMirror, mirrorSlim,
   /* where you are, and the way around (build 141) */
   titleBar, tabBar, navTabs, navKind, navGames, viewGames, nextGames, navTeams, tabFor, upView, homeView, sheetMore, sheetAccount, VIEW_TITLE,
+  /* two doors, Teams and Sessions (DOORS.md) */
+  DOORS, hasDoor, doorOf, curDoor, defaultDoor, settleDoor, doorHome, doorRow, viewSessHome, SESSION_VIEWS,
+  /* a session coach, a coach of no team (DOORS.md) */
+  isSessionCoach, coachesSessions, sessOnly, isCoachAny, INVITE_ROLES, CLUB_ROLES, sheetPersonRoles, sessCoaches,
   /* copy and vocabulary (UX-REVIEW.md, 2; build 144) */
   ROLE_LABEL, refusedMsg, roleWords, roleCard, roleCardSeen, INFO, infoBtn, sheetInfo, CAL_KIND,
   /* a family's own Home and Season (build 142) */
