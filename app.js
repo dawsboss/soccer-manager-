@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '182';
+const BUILD = '183';
 const BUILT = '2026-10-14';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -2233,7 +2233,7 @@ const LOG_ACTS = new Set([
      game, and nudges it, as the rules already allowed (a tracker writes the
      match but its date, kick-off, place and opponent). Starting a game over
      at 0:00 and reopening an ended one stay the coach's. */
-  'start', 'pause', 'endhalf', 'endgame', 'fixclock', 'nudgeclock', 'halflen', 'stopout',
+  'start', 'pause', 'endhalf', 'endgame', 'fixclock', 'nudgeclock', 'halflen', 'stopout', 'joinpause',
   /* opening a goal's or a shot's editor: Save and Delete were refused, but a
      parent could open a working-looking editor from Stats first (UX-REVIEW-3.md, 16.5) */
   'fixgoal', 'fixshot'
@@ -7293,12 +7293,23 @@ function halfLenSec(m, h, now = nowMs()) {
   return segments(m).filter(s => s.start && (s.half || 1) === h).reduce((t, s) => t + Math.floor(((s.end || now) - s.start) / 1000), 0);
 }
 
-/* Nudge the match clock when it was started late or early: the current
-   half's first stretch starts earlier or later. Never before the stretch
-   before it ended, never past its own last second. */
-function adjustClock(m, deltaSec) {
+/* Where did the time go wrong? (the owner, 2026-10-22: "we need to know
+   where the extra minutes came from, at the start, the end, or if someone
+   hit pause and shouldn't have; otherwise we assume this girl came on at a
+   time when in reality she came five minutes earlier"). Four answers, each
+   moving only what that answer says, through reclock(): the half started at
+   the wrong moment (adjustClock: everything in the half moves with the
+   kick-off), it ran on after it ended (setHalfLength: what was logged after
+   lands at the end), it ran on through a stoppage (takeOutStoppage: what
+   came after moves up), or it was paused when play was on (joinPause: what
+   came after moves on). The sheet asks the question and offers the four. */
+
+/* The half started at the wrong moment: its first stretch starts earlier or
+   later, any half, the one being played by default. Never before the
+   stretch before it ended, never past its own last second. */
+function adjustClock(m, deltaSec, half = m.currentHalf || 1) {
   const all = segments(m);
-  const segs = all.filter(s => (s.half || 1) === (m.currentHalf || 1) && s.start);
+  const segs = all.filter(s => (s.half || 1) === half && s.start);
   const first = segs[0];
   if (!first) { toast('Start the clock first'); return; }
   const prev = all.filter(s => s.start && s.i < first.i).pop();
@@ -7306,6 +7317,29 @@ function adjustClock(m, deltaSec) {
   const floor = Math.max(-60 * 60000, prev ? (prev.end || first.start) - first.start : -60 * 60000);
   const shift = clamp(-deltaSec * 1000, floor, span - 1000);
   reclock(m, periodsFrom(all.map(s => s.i === first.i ? { ...s, start: first.start + shift } : s)));
+}
+/* Someone hit Pause when play was on: the pause after stretch `i` of the
+   half should not have been, so the two stretches either side of it are
+   one, the half gains the pause and everything after it moves on by it.
+   Returns a reason when refused, nothing when done. */
+function joinPause(m, half, i) {
+  const all = segments(m), a = all.find(s => s.i === i);
+  const b = a && all.filter(s => s.start && s.i > a.i)[0];
+  if (!a || !a.start || !a.end || !b || (a.half || 1) !== half || (b.half || 1) !== half) return 'That pause is not there any more';
+  reclock(m, periodsFrom(all.filter(s => s.i !== b.i).map(s => s.i === a.i ? { ...a, end: b.end } : s)));
+  return null;
+}
+/* The pauses in a half, for the sheet: where each fell on the half's clock,
+   how long, and the stretch before it. */
+function pausesIn(m, half) {
+  const segs = segments(m).filter(s => s.start && (s.half || 1) === half), out = [];
+  let acc = 0;
+  for (let k = 0; k < segs.length - 1; k++) {
+    const a = segs[k], b = segs[k + 1];
+    acc += Math.floor((a.end - a.start) / 1000);
+    out.push({ i: a.i, at: acc, len: Math.floor((b.start - a.end) / 1000) });
+  }
+  return out;
 }
 /* A half that ran long (nobody tapped End half, or End game) or short: its
    last stretch ends where the length says. Never before its own first
@@ -23065,46 +23099,48 @@ function sheetAvailability(then, id) {
     <button class="btn wide" data-act="closesheet">Done</button>`);
 }
 
-/* The clock, fixable during the game and after it (build 182): the nudge
-   for the half being played, and for every half played its real length and
-   a stoppage the clock ran through, each on the half's own clock. One
-   sentence says what every change here does to the minutes, since it is the
-   same for all of them (reclock()). Starting over stays the coach's. */
+/* The clock, fixable during the game and after it (build 182; build 183
+   asks where the time went wrong, the owner, 2026-10-22). For every half
+   played, the four answers, each saying in a line what it moves. One
+   sentence above says what every change here does to the minutes, since it
+   is the same for all of them (reclock()). Starting over stays the coach's. */
 function sheetFixClock() {
   const m = match(), now = nowMs();
   const onNow = fieldIds(m).length;
-  const cur = m.currentHalf || 1;
   const halves = [...new Set(segments(m).filter(s => s.start).map(s => s.half || 1))].sort((a, b) => a - b);
-  const live = !m.ended && halves.includes(cur);
   const tod = ms => { const d = new Date(ms); return pad2(d.getHours()) + ':' + pad2(d.getMinutes()); };
+  const chip = (h, d) => `<button class="chip" type="button" data-act="nudgeclock" data-h="${h}" data-d="${d}">${d < 0 ? '−' : '+'}${Math.abs(d) >= 60 ? Math.abs(d) / 60 + 'm' : Math.abs(d) + 's'}</button>`;
   const halfRows = halves.map(h => {
     const segs = segments(m).filter(s => s.start && (s.half || 1) === h), last = segs[segs.length - 1];
-    const len = halfLenSec(m, h, now), open = !last.end;
+    const len = halfLenSec(m, h, now), open = !last.end, name = esc(halfName(m, h)), pauses = pausesIn(m, h);
     return `<div class="fixhalf">
-      <p style="margin:14px 0 6px"><b>${esc(halfName(m, h))}</b> · ${mmss(len)} on the clock · ${tod(segs[0].start)} to ${open ? 'now' : tod(last.end)}${segs.length > 1 ? ` · paused ${segs.length - 1} time${segs.length === 2 ? '' : 's'}` : ''}</p>
-      <div class="row">
+      <p style="margin:16px 0 2px"><b>${name}</b> · ${mmss(len)} on the clock · ${tod(segs[0].start)} to ${open ? 'now' : tod(last.end)}${pauses.length ? ` · paused ${pauses.length === 1 ? 'once' : pauses.length + ' times'}` : ''}</p>
+      <p class="muted" style="margin:0 0 8px">Where did the time go wrong?</p>
+      <p style="margin:0 0 2px"><b>Started at the wrong moment</b></p>
+      <p class="muted" style="margin:0 0 6px">The whistle went earlier or later than the clock was started. Everything in the ${name.toLowerCase()} moves with the kick-off.</p>
+      <div class="chips" style="margin-bottom:4px">${[-300, -60, -15, -5].map(d => chip(h, d)).join('')}</div>
+      <div class="chips" style="margin-bottom:10px">${[5, 15, 60, 300].map(d => chip(h, d)).join('')}</div>
+      <p style="margin:0 0 2px"><b>Ran on after it ended</b></p>
+      <p class="muted" style="margin:0 0 6px">Nobody tapped End ${open ? 'half or End game' : 'half'}. What was logged after the real end lands at the end.${open ? ' Saving a length stops the clock there.' : ''}</p>
+      <div class="row" style="margin-bottom:10px">
         <label class="field" style="flex:1;margin-bottom:0"><span>Really lasted</span><input type="text" id="hl${h}" value="${mmss(len)}" placeholder="40:00" inputmode="numeric" data-clock></label>
         <button class="btn quiet sm" data-act="halflen" data-h="${h}">Save</button>
       </div>
-      ${open ? '<p class="muted" style="margin:4px 0 0">Saving a length stops the clock there.</p>' : ''}
-      <div class="row" style="margin-top:10px">
-        <label class="field" style="flex:1;margin-bottom:0"><span>Ran on through a stoppage at</span><input type="text" id="sa${h}" placeholder="23:10" inputmode="numeric" data-clock></label>
+      <p style="margin:0 0 2px"><b>Ran on through a stoppage</b></p>
+      <p class="muted" style="margin:0 0 6px">Nobody tapped Pause for an injury or a hold-up. Times on the ${name.toLowerCase()}'s own clock; what came after it moves up.</p>
+      <div class="row" style="margin-bottom:10px">
+        <label class="field" style="flex:1;margin-bottom:0"><span>At</span><input type="text" id="sa${h}" placeholder="23:10" inputmode="numeric" data-clock></label>
         <label class="field" style="flex:1;margin-bottom:0"><span>For</span><input type="text" id="sl${h}" placeholder="3:00" inputmode="numeric" data-clock></label>
         <button class="btn quiet sm" data-act="stopout" data-h="${h}">Take it out</button>
       </div>
-      <p class="muted" style="margin:4px 0 0">Times on this half's clock. The half gets that much shorter from there.</p>
+      ${pauses.length ? `<p style="margin:0 0 2px"><b>Paused when play was on</b></p>
+      <p class="muted" style="margin:0 0 6px">Someone tapped Pause by mistake. The clock catches up and what came after the pause moves on.</p>
+      ${pauses.map(p => `<div class="row" style="margin-bottom:6px"><span style="flex:1">Paused at ${mmss(p.at)} for ${mmss(p.len)}</span><button class="btn quiet sm" data-act="joinpause" data-h="${h}" data-i="${p.i}">Should have kept running</button></div>`).join('')}` : ''}
     </div>`;
   }).join('');
   openSheet(`<h3>${m.ended ? 'Fix the clock' : 'Adjust or restart the clock'}</h3>
     <p class="muted" style="margin-top:0">${m.ended ? `Full time at ${mmss(elapsedSec(m, now))}.` : `Reads ${mmss(elapsedSec(m, now))} now.`} Whatever you change here, every sub, goal and shot keeps the moment it happened and its time on the clock moves with it, so minutes follow the clock.</p>
-    ${live ? `<p class="muted" style="margin:0 0 6px">Nudge the current ${esc(halfName(m, cur)).toLowerCase()}: it shifts the half and the total together.</p>
-    <div class="chips" style="margin-bottom:8px">
-      ${[-300, -60, -15, -5].map(d => `<button class="chip" type="button" data-act="nudgeclock" data-d="${d}">−${Math.abs(d) >= 60 ? Math.abs(d) / 60 + 'm' : Math.abs(d) + 's'}</button>`).join('')}
-    </div>
-    <div class="chips" style="margin-bottom:8px">
-      ${[5, 15, 60, 300].map(d => `<button class="chip" type="button" data-act="nudgeclock" data-d="${d}">+${d >= 60 ? d / 60 + 'm' : d + 's'}</button>`).join('')}
-    </div>` : ''}
-    ${halfRows ? `<h3 style="margin:10px 0 0">Each half, as the clock has it</h3>${halfRows}` : ''}
+    ${halfRows || '<p class="muted">The clock has not started.</p>'}
     <button class="btn wide" data-act="closesheet" style="margin-top:16px">Done</button>
     ${canEditTeam(m.teamId) && !m.ended ? `<hr style="border:0;border-top:1px solid var(--line);margin:18px 0">
     <h3>Started too early?</h3>
@@ -25584,7 +25620,11 @@ function onAct(e) {
   }
 
   if (a === 'fixclock') { sheetFixClock(); return; }
-  if (a === 'nudgeclock') { adjustClock(m, Number(d.d)); sheetFixClock(); return; }
+  if (a === 'nudgeclock') { adjustClock(m, Number(d.d), d.h ? Number(d.h) : undefined); sheetFixClock(); return; }
+  if (a === 'joinpause') {
+    const h = Number(d.h), why = joinPause(m, h, Number(d.i)); if (why) { toast(why); return; }
+    sheetFixClock(); toast(`${halfName(m, h)}: ${mmss(halfLenSec(match(), h))}`); return;
+  }
   if (a === 'halflen') {
     const h = Number(d.h), box = $('#hl' + h), len = parseTime(box && box.value, -1);
     if (len < 0) { toast('Type the length as minutes and seconds, like 40:00'); return; }
