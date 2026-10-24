@@ -11,7 +11,7 @@ const BUILT = '2026-10-14';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 37;
+const RULES_VERSION = 38;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -2371,11 +2371,17 @@ async function takeSeat(put, base, v, who, at) {
     return k;
   }
 }
-const INVITE_ROLES = { coach: 'Coach', tracker: 'Tracker', helper: 'Team helper', parent: 'Parent', viewer: 'Club viewer', sesscoach: 'Session coach' };
+const INVITE_ROLES = { coach: 'Coach', tracker: 'Tracker', helper: 'Team helper', parent: 'Parent', viewer: 'Club viewer', sesscoach: 'Session coach', admin: 'Club admin' };
 // where each staff role is named on a team: access/teams/{tid}/{key}/{uid}
 const STAFF_KEY = { coach: 'coaches', tracker: 'trackers', helper: 'helpers' };
 // a role for the whole club, with no team to pick
-const CLUB_ROLES = new Set(['viewer', 'sesscoach']);
+const CLUB_ROLES = new Set(['viewer', 'sesscoach', 'admin']);
+/* An admin's invite is granted by the server alone (functions/join.js, which
+   checks its maker is still an admin): the rules have no way for anybody to
+   write herself into the admin list. So it is offered only where the server
+   is, and is always for one person: a link for several that made admins
+   would be a club handed to whoever it was forwarded to. */
+const adminInviteOn = () => serverOn();
 let rtdb = null;        // { db, mod } once the database module has loaded, code or not
 /* null until asked, then 'asking', 'ok', 'old' (the published rules predate
    this app) or 'app' (this app predates them: another phone has already
@@ -2562,6 +2568,7 @@ function inviteWhat(v) {
   const role = INVITE_ROLES[v.role] || v.role;
   if (v.role === 'player') return `a player, #${esc(v.playerNo || '?')} on <b>${esc(v.teamName || 'a team')}</b>, with your own sign-in`;
   if (v.role === 'fan') return `a fan of ${v.playerNo ? '#' + esc(v.playerNo) : 'a player'} on <b>${esc(v.teamName || 'a team')}</b>: the calendar, the games as they happen and the team's notices${v.approved ? '' : '. A coach of the team says yes before you see anything'}`;
+  if (v.role === 'admin') return 'a club admin: every team, its people and the club\u2019s settings';
   if (v.role === 'viewer') return 'a club viewer: every team\u2019s games and calendar, to read';
   if (v.role === 'sesscoach') return 'a session coach: 1-1s and small groups for the club\u2019s players, with no team of your own';
   return v.role === 'parent'
@@ -2664,6 +2671,12 @@ function joined(ans, v) {
 async function redeemHere() {
   if (!invite || invite.status !== 'ready' || !rtdb || !me) return;
   const id = invite.id, v = invite.doc, who = me.uid, ws = v.ws, at = nowMs();
+  // nothing on the phone can make an admin; only the server's answer does
+  if (v.role === 'admin') {
+    invite.status = 'error';
+    invite.err = 'The club could not be reached to make you an admin';
+    render(); return;
+  }
   const { db, mod } = rtdb;
   const put = (p, val) => mod.set(mod.ref(db, p), val);
   const soft = pr => Promise.resolve(pr).catch(() => { });
@@ -2912,7 +2925,7 @@ function invitesCard() {
   };
   return `<div class="card"><div class="spread"><h2 style="margin:0">Invites</h2>
       <button class="btn sm" data-act="invitenew">Invite someone</button></div>
-    <p class="muted">A link that makes an account a coach, tracker, team helper or parent on one team, or a club viewer. You choose how many people can use it and for how long. Each can be emailed or copied; tap one to see who used it, or revoke it.</p>
+    <p class="muted">A link that makes an account a coach, tracker, team helper or parent on one team, or a club viewer${adminInviteOn() ? ' or admin' : ''}. You choose how many people can use it and for how long. Each can be emailed or copied; tap one to see who used it, or revoke it.</p>
     ${open.length ? open.map(row).join('') : `<p class="muted" style="margin:0">No open invites.</p>`}
     ${past.length ? `<button class="btn quiet sm" data-act="invitepast" style="margin-top:8px">${ui.invPast ? 'Hide' : 'Show'} used and expired (${past.length})</button>
     ${ui.invPast ? `<div style="margin-top:8px">${past.map(row).join('')}</div>` : ''}` : ''}</div>`;
@@ -2928,7 +2941,7 @@ function sheetInviteDetail(id) {
   const st = inviteStatus(v), link = inviteLink(id);
   const when = ms => ms ? new Date(ms).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'unknown';
   const who = v.used && (acc().members || {})[v.used.by];
-  const stillHas = v.used && (v.role === 'viewer' ? isViewer(v.used.by) : v.role === 'sesscoach' ? isSessionCoach(v.used.by) : v.role === 'parent'
+  const stillHas = v.used && (v.role === 'admin' ? isAdmin(v.used.by) : v.role === 'viewer' ? isViewer(v.used.by) : v.role === 'sesscoach' ? isSessionCoach(v.used.by) : v.role === 'parent'
     ? !!(((((state.teams[v.team] || {}).players || {})[v.player] || {}).guardians || {})[v.used.by])
     : v.role === 'coach' ? isCoach(v.team, v.used.by) : isTracker(v.team, v.used.by));
   const line = (k, val) => `<div class="spread" style="padding:6px 0;border-top:1px solid var(--line)"><span class="muted">${k}</span><span style="text-align:right">${val}</span></div>`;
@@ -2961,16 +2974,17 @@ function sheetInvite() {
     .sort((a, b) => (Number(a.number) || 999) - (Number(b.number) || 999)) : [];
   openSheet(`<h3>Invite someone</h3>
     <p class="lbl">As</p>
-    <div class="chips" style="margin-bottom:12px">${Object.entries(INVITE_ROLES).map(([k, l]) =>
+    <div class="chips" style="margin-bottom:12px">${Object.entries(INVITE_ROLES).filter(([k]) => k !== 'admin' || adminInviteOn()).map(([k, l]) =>
     `<button class="chip" type="button" data-act="invitepick" data-k="role" data-v="${k}" aria-pressed="${f.role === k}">${l}</button>`).join('')}</div>
     ${f.role === 'sesscoach' ? `<p class="muted" style="margin-top:0">Runs 1-1s and small groups for the club's players: offers and books sessions and bookable times, keeps her register and fees, and messages the families in them. No team of her own: no squad, game, practice or notice is hers.</p>` : ''}
-    ${f.role === 'viewer' ? `<p class="muted" style="margin-top:0">Reads every team's calendar and games, with the children's names, and nothing else: no emails, no access log, no coach's notes, no messages, no answering who's coming, no changes.</p>` : `<p class="lbl">Team</p>
+    ${f.role === 'admin' ? `<p class="muted" style="margin-top:0">Runs the club with you: every team, the people and their roles, invites, fields and the club's settings. Every admin is told when someone becomes one. For one person only.</p>` : ''}
+    ${f.role === 'admin' ? '' : f.role === 'viewer' ? `<p class="muted" style="margin-top:0">Reads every team's calendar and games, with the children's names, and nothing else: no emails, no access log, no coach's notes, no messages, no answering who's coming, no changes.</p>` : `<p class="lbl">Team</p>
     ${pickOne('invitepick', 'team', f.team, teams().map(x => [x.id, esc(x.name || 'Team')]), 'Add a team first.')}`}
     ${f.role === 'helper' ? `<p class="muted" style="margin-top:-4px">A manager or a volunteer: the team's calendar, register, notices, practice plans and game plans before kick-off, and the drills. Not the squad, the clock or the subs, and no family's conversations.</p>` : ''}
     ${f.role === 'parent' ? `<p class="lbl">Parent of</p>
     ${pickOne('invitepick', 'player', f.player, players.map(p => [p.id, `${p.number ? '#' + esc(p.number) + ' ' : ''}${esc(p.name || '')}${needsParent(t, p) ? ' · no parent yet' : ''}`]), 'No players on this team.')}` : ''}
     <label class="field"><span>Their email — optional</span><input type="email" id="invEmail" placeholder="Leave empty for a link to send yourself" autocapitalize="off" autocorrect="off"></label>
-    ${limitFields('inv')}
+    ${limitFields('inv', { noUses: f.role === 'admin' })}
     <p class="muted">With an email, only that address can accept it (one person), and you can have the sign-in email sent for you. Without one, whoever opens the link first gets the role, up to as many people as you chose — send it somewhere private.</p>
     <button class="btn wide" data-act="invitemake">Make the invite</button>`);
 }
@@ -2980,7 +2994,7 @@ function sheetInvite() {
    worth stops at the first refusal instead of making fifteen half-invites. */
 async function writeInvite(t, role, p, email, lim = {}) {
   // an email-bound link is for that one person, and a player's own is hers alone
-  const uses = email || role === 'player' ? 1 : Math.max(1, Math.min(LINK_MAX, lim.uses || 1));
+  const uses = email || role === 'player' || role === 'admin' ? 1 : Math.max(1, Math.min(LINK_MAX, lim.uses || 1));
   const id = uses > 1 ? randId('m', 18) : secretId(), at = nowMs();
   /* What the invitee sees before joining. Club, team and who sent it — never
      the child's name: the invite is readable by anyone holding the link, and a
@@ -3017,12 +3031,13 @@ async function makeInvite() {
   const t = club ? null : state.teams[f.team];
   if (!t && !club) { toast('Pick a team'); return; }
   if (!INVITE_ROLES[f.role]) { toast('Pick a role'); return; }
+  if (f.role === 'admin' && !adminInviteOn()) { toast('Make them an admin from People once they have joined'); return; }
   const p = f.role === 'parent' ? (t.players || {})[f.player] : null;
   if (f.role === 'parent' && !p) { toast('Pick the player'); return; }
   const el = $('#invEmail');
   const email = ((el && el.value) || '').trim().toLowerCase();
   if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { toast('That email does not look right'); return; }
-  const lim = readLimits('inv');
+  const lim = readLimits('inv', { noUses: f.role === 'admin' });
   let made;
   try { made = await writeInvite(t, f.role, p, email, lim); } catch (e) {
     toast(/permission|denied/i.test((e && e.code) || '') ? refusedMsg() : 'Could not make the invite');

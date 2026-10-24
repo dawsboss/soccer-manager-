@@ -114,7 +114,8 @@ const raw = (S, p) => S.ref(p).get().then(s => s.val());
     await no('the child it names is gone from the squad', db => { delete db.workspaces.CLUB.teams.t1.players.p2; }, 'nia', 'gone');
     await no('a club that has been retired', db => { db.retired = { CLUB: true }; }, 'nia', 'gone');
     await no('a club being moved: later', db => { db.serverState = { moving: { CLUB: { by: 'adm', at: 1 } } }; }, 'nia', 'moving');
-    await no('a role no invite gives', db => { db.invites.iP.role = 'admin'; }, 'nia', 'gone');
+    await no('a role no invite gives', db => { db.invites.iP.role = 'owner'; }, 'nia', 'gone');
+    await no('an admin\'s invite naming a team, which the rules never let be made', db => { db.invites.iP.role = 'admin'; }, 'nia', 'gone');
     const S = server();
     const a = await S.fire('joinAsks/nia/old', { op: 'invite', invite: 'iP', at: Date.now() - 3600000 });
     check('an ask an hour old is not acted on', [a.joinAsk.why, S.at('invites/iP/used')].join(), 'stale,');
@@ -183,6 +184,26 @@ const raw = (S, p) => S.ref(p).get().then(s => s.val());
     const d = await ask(S, 'gus', { op: 'invite', invite: 'iS' });
     check('a session coach is in', [d.ok, S.at(W + 'access/sessionCoaches/gus'), S.at(W + 'access/index/gus')].join(), 'true,iS,iS');
     check('— and on no team', S.at(W + 'access/coachIndex/gus') == null && S.at(W + 'access/teams/t1/coaches/gus') == null, true);
+  }
+
+  {
+    console.log('\n--- a club admin ---');
+    const S = server(db => {
+      db.invites.iA = { ...inv({ role: 'admin' }), team: undefined, player: undefined }; delete db.invites.iA.team; delete db.invites.iA.player;
+      db.invites.iAold = { ...db.invites.iA, by: 'gone' };
+      db.invites.iAm = { ...db.invites.iA, max: 2, seats: { s1: true, s2: true } };
+    });
+    S.users.ann = { email: 'ann@x.com', emailVerified: true, displayName: 'Ann' };
+    const a = await ask(S, 'ann', { op: 'invite', invite: 'iA' });
+    check('an admin\'s invite makes her an admin', [a.ok, S.at(W + 'access/admins/ann'), S.at(W + 'access/index/ann')].join(), 'true,true,iA');
+    check('— and no owner', S.at(W + 'access/owners/ann') == null, true);
+    const made = Object.values(S.at(W + 'access/log') || {}).find(e => e.act === 'made admin' && e.target === 'ann');
+    check('the log names whoever made the invite, for the admins\' message', made && made.by, 'adm');
+    S.users.bob = { email: 'bob@x.com', emailVerified: true, displayName: 'Bob' };
+    const b = await ask(S, 'bob', { op: 'invite', invite: 'iAold' });
+    check('one made by somebody no longer an admin makes nobody one', [b.ok, b.why, S.at(W + 'access/admins/bob')].join(), 'false,gone,');
+    const c = await ask(S, 'bob', { op: 'invite', invite: 'iAm' });
+    check('nor one for several people', [c.ok, S.at(W + 'access/admins/bob')].join(), 'false,');
   }
 
   console.log('\n--- a new club, at a code the server makes ---');

@@ -668,5 +668,43 @@ const CLUB = {
     deepEq('each row knows its invite', [A.importContacts.made[rows[0].key], A.importContacts.made[rows[1].key]], ['iDad', 'iCoach']);
   }
 
+  console.log('\n--- an invite to be a club admin ---');
+  {
+    // without the server nothing could grant it, so it is not offered
+    const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' } });
+    fbk.signIn('adm', { name: 'Ada' }); await A.flush();
+    await fbk.serveClub('CLUB', CLUB, A.flush); await A.flush();
+    A.click({ act: 'invitenew' });
+    check('no server: no Club admin to pick', /data-v="admin"/.test(A.rendered('#sheet')), false);
+    A.click({ act: 'invitepick', k: 'role', v: 'admin' });
+    await A.makeInvite(); await A.flush();
+    check('— and one reaching the handler is not made', fbk.record.writes.some(w => /^invites\//.test(w.path)), false);
+  }
+  {
+    const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' }, server: true });
+    fbk.signIn('adm', { name: 'Ada' }); await A.flush();
+    await fbk.serveClub('CLUB', CLUB, A.flush); await A.flush();
+    A.click({ act: 'invitenew' });
+    check('with the server, Club admin is a choice', /data-v="admin"[^>]*>Club admin</.test(A.rendered('#sheet')), true);
+    A.click({ act: 'invitepick', k: 'role', v: 'admin' });
+    check('asking for no team', /data-k="team"/.test(A.rendered('#sheet')), false);
+    check('and for one person only', /id="invUses"/.test(A.rendered('#sheet')), false);
+    await A.makeInvite(); await A.flush();
+    const w = fbk.record.writes.find(x => /^invites\/[^/]+$/.test(x.path));
+    deepEq('the invite: an admin, for the whole club, one person', w && [w.value.role, 'team' in w.value, 'seats' in w.value, w.value.by], ['admin', false, false, 'adm']);
+    check('said as the whole club', /Club admin for the whole club/.test(A.rendered('#sheet')), true);
+  }
+  {
+    // accepting: only the server's answer makes her an admin, never her own phone
+    const { A, fbk } = await boot({ search: '?invite=' + ID, server: true, refuse: p => /^joinAsks\//.test(p) });
+    fbk.signIn('sam', { name: 'Sam', email: 'sam@x.test' }); await A.flush();
+    const d = inviteDoc(A, { role: 'admin' }); delete d.team; delete d.teamName;
+    fbk.deliver('invites/' + ID, d); await A.flush();
+    check('she is told what she is joining as', /a club admin/.test(A.rendered()), true);
+    A.click({ act: 'inviteaccept' }); await A.flush(); await A.flush(20);
+    check('the ask refused: the phone writes nothing of the club', clubWrites(fbk).join(), '');
+    check('and says it could not be done', /could not be reached/.test(A.rendered()), true);
+  }
+
   H.summary('invites');
 })();
