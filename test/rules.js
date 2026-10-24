@@ -2918,6 +2918,15 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
   w('only an admin makes a viewer\'s invite, with no team', OA, 'invites/inv8', { ws: 'ORGC', by: 'oa', role: 'viewer', at: NOW, expiresAt: NOW + 1e9 }, true);
   w('— not a coach', OC, 'invites/inv8', { ws: 'ORGC', by: 'oc', role: 'viewer', at: NOW, expiresAt: NOW + 1e9 }, false);
   w('every other role still names its team', OA, 'invites/inv8', { ws: 'ORGC', by: 'oa', role: 'coach', at: NOW, expiresAt: NOW + 1e9 }, false);
+  // an admin's invite: made by an admin for one person, and granted by the server alone (functions/join.js)
+  w('an admin makes an invite to be an admin, with no team', OA, 'invites/inv9', { ws: 'ORGC', by: 'oa', role: 'admin', at: NOW, expiresAt: NOW + 1e9 }, true);
+  w('— not a coach', OC, 'invites/inv9', { ws: 'ORGC', by: 'oc', role: 'admin', at: NOW, expiresAt: NOW + 1e9 }, false);
+  w('— never for several people', OA, 'invites/inv9', { ws: 'ORGC', by: 'oa', role: 'admin', at: NOW, expiresAt: NOW + 1e9, max: 2, seats: { s1: true, s2: true } }, false);
+  w('— nor naming a team', OA, 'invites/inv9', { ws: 'ORGC', by: 'oa', role: 'admin', team: 'ot', at: NOW, expiresAt: NOW + 1e9 }, false);
+  DB.invites = { 'inv-ad': { ws: 'ORGC', role: 'admin', by: 'oa', expiresAt: NOW + 1e6, used: { by: 'nad', at: NOW } } };
+  w('a spent admin\'s invite does not let her write herself an admin', { uid: 'nad' }, O + 'access/admins/nad', 'inv-ad', false);
+  w('— nor as true', { uid: 'nad' }, O + 'access/admins/nad', true, false);
+  delete DB.invites;
   delete ORGC.access.viewers; delete ORGC.access.index.ov; delete ORGC.coachNotes;
 
   console.log('\n--- the old tree is closed ---');

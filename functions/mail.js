@@ -64,7 +64,7 @@ const okMail = s => typeof s === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s
 const clip = (s, n) => String(s == null ? '' : s).replace(/[\r\n]+/g, ' ').trim().slice(0, n);
 // the words of a notice keep their lines
 const body = (s, n) => String(s == null ? '' : s).replace(/\r\n?/g, '\n').trim().slice(0, n);
-const ROLE_WORDS = { coach: 'a coach', tracker: 'a tracker', helper: 'a team helper', parent: 'a parent', player: 'a player, with your own sign-in', viewer: 'a club viewer', sesscoach: 'a session coach', fan: 'a fan' };
+const ROLE_WORDS = { coach: 'a coach', tracker: 'a tracker', helper: 'a team helper', parent: 'a parent', player: 'a player, with your own sign-in', viewer: 'a club viewer', sesscoach: 'a session coach', admin: 'a club admin', fan: 'a fan' };
 
 /* Where a family's email is: her member entry, or, for a family the club
    let in through registration who has none, her account's address, and only

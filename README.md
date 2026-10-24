@@ -101,6 +101,10 @@ The invite shows the club, the team and who sent it — never a child's name. A 
 
 A director or a board member sees every team's calendar and games with the children's names, and nothing else: no emails, no access log, no coach's notes, no messages, no answering who's coming, no changes. An admin makes one from **People** (the person's *Club viewer* chip) or with **Invite someone → Club viewer**, which asks for no team. It needs rules version 17 published. The game link without signing in is unchanged and still carries no names.
 
+### Inviting another admin
+
+**Invite someone → Club admin** makes a link that makes whoever accepts it an admin of the club (never an owner). It is for one person, asks for no team, and is offered only where the server is deployed (`SOCCER_SERVER`): the rules have no way for anyone to write herself into the admin list, so only `functions/join.js` grants it, and only while whoever made the invite is still an admin. Every admin and owner is told, naming who made the invite. It needs rules version 38 published (for an invite with the role `admin`).
+
 ### A session coach
 
 A coach the club pays for 1-1s and small groups who runs no team (build 181, rules version 35; `DOORS.md`, *A coach of no team*). An admin names her from People (the person's **Session coach** chip) or with an invite for the whole club, which names no team. She offers, runs and plans sessions and bookable times as any coach does, keeps her register and fees, has time off, talks to the other coaches and admins and to the families of the children in her sessions; she reads every squad and the children's records for the names and ages, and never the members' emails, the access log or the coach's notes. Nothing of a team is hers: no squad, game, practice, notice or team conversation. Her app is the Sessions door alone, with no switch to Teams; a session coach who also coaches a team keeps both.

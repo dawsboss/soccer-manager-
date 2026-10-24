@@ -52,9 +52,9 @@ const keys = o => Object.keys(o && typeof o === 'object' ? o : {});
 const STAFF_KEY = { coach: 'coaches', tracker: 'trackers', helper: 'helpers' };
 const TEAM_ROLES = ['coach', 'tracker', 'helper', 'parent', 'player', 'fan'];
 // INVITE_ROLES and ROLE_LABEL from app.js, for the log
-const ROLE_NAME = { coach: 'Coach', tracker: 'Tracker', helper: 'Team helper', parent: 'Parent', viewer: 'Club viewer', sesscoach: 'Session coach', player: 'Player', fan: 'Fan' };
-// the roles for the whole club, with no team to name (a viewer, and a session coach: DOORS.md)
-const CLUB_ROLES = ['viewer', 'sesscoach'];
+const ROLE_NAME = { coach: 'Coach', tracker: 'Tracker', helper: 'Team helper', parent: 'Parent', admin: 'Club admin', viewer: 'Club viewer', sesscoach: 'Session coach', player: 'Player', fan: 'Fan' };
+// the roles for the whole club, with no team to name (an admin, a viewer, and a session coach: DOORS.md)
+const CLUB_ROLES = ['admin', 'viewer', 'sesscoach'];
 const clip = (s, n) => String(s == null ? '' : s).slice(0, n);
 const seatOrder = (a, b) => Number(a.slice(1)) - Number(b.slice(1));
 // randId() from app.js, on the server's own generator: a club code is the whole of nobody's access, but it must never be guessed or taken
@@ -97,6 +97,11 @@ async function redeem(env, uid, ask, now) {
   const L = await where(env.get, ws);
   const acc = await readAccess(env.get, L);
   if (!acc || typeof acc !== 'object' || !acc.admins) return { ok: false, why: 'gone' };
+  /* An admin's invite is only as good as its maker: admins appoint admins
+     (SECURITY.md, SEC-D8), so one made by somebody who has since stepped
+     down or been removed makes nobody an admin. The rules have no grant for
+     it at all; only this does it, and only from an invite of one person. */
+  if (role === 'admin' && (!okKey(v0.by) || !has(acc.admins, v0.by) || v0.seats || v0.team || v0.player)) return { ok: false, why: 'gone' };
   // the rules ask for the team and the child to be there; a viewer is club-wide
   const team = TEAM_ROLES.includes(role) ? await readTeam(env.get, L, v0.team) : null;
   if (TEAM_ROLES.includes(role) && !team) return { ok: false, why: 'gone' };
@@ -143,6 +148,7 @@ async function redeem(env, uid, ask, now) {
     if (role === 'parent') patch[`${pl}/guardians/${uid}`] = id;
     else if (role === 'player') patch[`${pl}/self/${uid}`] = id;
     else if (role === 'fan') { patch[`${pl}/fans/${uid}`] = id; patch[`${pl}/fanNames/${uid}`] = clip(name || email || 'A fan', 80); }
+    else if (role === 'admin') patch[`${A}/admins/${uid}`] = true;
     else if (role === 'viewer') patch[`${A}/viewers/${uid}`] = id;
     else if (role === 'sesscoach') patch[`${A}/sessionCoaches/${uid}`] = id;
     else patch[`${A}/teams/${v.team}/${STAFF_KEY[role]}/${uid}`] = id;
@@ -152,6 +158,11 @@ async function redeem(env, uid, ask, now) {
     patch[`${L.base}/log/${newId()}`] = {
       at: now, act: 'joined by invite as', by: uid, byName: name || null, target: uid,
       targetName: ROLE_NAME[role] || role, team: v.team || null, teamName: v.teamName || null
+    };
+    /* Who made her an admin is whoever made the invite: the diary entry
+       adminwatch.js names them from, as the app logs a promotion by hand. */
+    if (role === 'admin') patch[`${L.base}/log/${newId()}`] = {
+      at: now, act: 'made admin', by: v.by, byName: clip(v.byName, 80) || null, target: uid, targetName: name || email || 'Someone'
     };
   }
   // the admin's list of invites, where it has this one
