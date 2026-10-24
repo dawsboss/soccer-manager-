@@ -899,6 +899,12 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
   writes('not all at once as a blob', COACH, P + 'mute', { msg: true }, false);
   reads('she reads her own', COACH, P + 'mute', true);
   reads('nobody else does, an admin included', ADM, P + 'mute', false);
+  // what the server told her, from every club (rules version 37): hers to read, the server's alone to write
+  reads('she reads her own inbox', COACH, P + 'inbox', true);
+  reads('nobody else does, an admin included', ADM, P + 'inbox', false);
+  writes('she writes nothing into it', COACH, P + 'inbox/x', { title: 'Made up', code: 'CLUB', at: 1 }, false);
+  writes('nor takes from it', COACH, P + 'inbox/x', null, false);
+  writes('nor does anybody else', ADM, P + 'inbox/x', { title: 'Made up', code: 'CLUB', at: 1 }, false);
   console.log('  ^ shared means readable by anyone signed in who knows her uid;');
   console.log('    a uid is only shown inside a club she is in, but it is no secret.');
   delete DB.people;

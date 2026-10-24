@@ -286,6 +286,20 @@ it hears from all of them too:
   tracks, or a child of hers is on) called off, back on, moved or new, in any
   club, the open one included (`calAlerts()`). A weekly series is one alert.
   An admin hears the open club's changes from club activity instead, not twice.
+- **Everything else, from her inbox** (the owner, 2026-10-24: *no matter
+  what club you have up notifications should be for your account, not just
+  what is open currently*). The server already works out who is told what in
+  every club, for a push to a closed phone; beside every push it keeps each
+  person a copy at `people/{uid}/inbox/{id}` (rules version 37, hers alone to
+  read, the server's alone to write; the newest forty, a fortnight at most),
+  whether or not she turned notifications on. The page listens to that one
+  path (`watchInbox()`) and turns what is about any club but the open one
+  into alerts: colleagues' and people's conversations, club activity, session
+  news and a followed game as well as the two above. While it answers, the
+  page's own guesses from its copies of her other clubs say nothing, so
+  nothing is said twice; where the rules are older they are what she gets.
+  An admin of another club hears every team's calendar there either way
+  (`alertClub()`, build 185).
 - **Interrupting.** An alert pops up (system notification, buzz, toast) and
   then sits in a bar above whatever is on screen, a game included, until she
   opens or dismisses it; called off and moved by a day or half an hour are

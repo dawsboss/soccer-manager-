@@ -109,6 +109,7 @@ function threadReaders(f, fam) {
 async function messagesFor(env, people, data, topic, ttl) {
   const out = [];
   const muted = await Promise.all([...people].map(async u => [u, topic ? (await env.get('people/' + u + '/mute/' + topic)) === true : false]));
+  await Promise.all(muted.filter(([, m]) => !m).map(([u]) => toInbox(env, u, { ...data(u) }, topic)));
   const lists = await Promise.all(muted.filter(([, m]) => !m).map(async ([u]) => [u, await env.get('pushTokens/' + u)]));
   for (const [u, toks] of lists)
     for (const token of keys(toks))
@@ -122,6 +123,34 @@ async function messagesFor(env, people, data, topic, ttl) {
         }
       });
   return out;
+}
+
+/* Each person's own list of what the server told her, at
+   people/{uid}/inbox/{id}, hers alone to read (rules version 37), whether or
+   not she has turned notifications on for any phone. A phone open on one
+   club hears that club itself; the rest of her clubs it hears from here, one
+   listener for the whole account (watchInbox() in app.js), so what reaches
+   her is hers wherever she is looking, as a push is. Keyed by the tag, so an
+   event delivered twice, or a goal whose scorer is added after, replaces its
+   own entry; the oldest go past INBOX_KEEP or INBOX_DAYS. A failure here
+   never stops the push. */
+const INBOX_KEEP = 40, INBOX_DAYS = 14;
+const inboxId = (code, tag) => String((code || '') + '~' + (tag || '')).replace(/[.#$\[\]\/]/g, '_').slice(0, 200);
+async function toInbox(env, u, d, topic) {
+  if (typeof env.inbox !== 'function' || !u || !d || !d.code || !d.tag) return;
+  try {
+    const now = typeof env.now === 'function' ? env.now() : Date.now();
+    const id = inboxId(d.code, d.tag);
+    await env.inbox(u, id, {
+      title: String(d.title || '').slice(0, 200), body: String(d.body || '').slice(0, BODY_MAX), code: String(d.code),
+      hash: String(d.hash || ''), urgent: d.urgent === '1', topic: String(topic || ''), at: now
+    });
+    const had = await env.get('people/' + u + '/inbox');
+    const old = Object.entries(had && typeof had === 'object' ? had : {}).filter(([k]) => k !== id)
+      .sort((a, b) => (Number((b[1] || {}).at) || 0) - (Number((a[1] || {}).at) || 0));
+    for (const [k, x] of old.slice(INBOX_KEEP - 1).concat(old.slice(0, INBOX_KEEP - 1).filter(([, x]) => now - (Number((x || {}).at) || 0) > INBOX_DAYS * 864e5)))
+      await env.inbox(u, k, null);
+  } catch (e) { }
 }
 
 /* Send, and tidy what Cloud Messaging says is dead. A failure for one phone
@@ -571,4 +600,4 @@ async function onFollowed(env, params, what, id, was) {
   return res;
 }
 
-module.exports = { onFollowed, LIVE_MS, FT_FRESH_MS, onNotice, onMessage, onStaff, onTalk, onEntry, onGameField, messagesFor, deliver, calNews, calSig, whenOf, teamReaders, noticeReaders, threadReaders, teamFacts, BODY_MAX, BATCH, SOON_DAYS, GAME_FIELDS };
+module.exports = { toInbox, inboxId, INBOX_KEEP, INBOX_DAYS, onFollowed, LIVE_MS, FT_FRESH_MS, onNotice, onMessage, onStaff, onTalk, onEntry, onGameField, messagesFor, deliver, calNews, calSig, whenOf, teamReaders, noticeReaders, threadReaders, teamFacts, BODY_MAX, BATCH, SOON_DAYS, GAME_FIELDS };

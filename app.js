@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '184';
+const BUILD = '185';
 const BUILT = '2026-10-14';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -11,7 +11,7 @@ const BUILT = '2026-10-14';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 36;
+const RULES_VERSION = 37;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -7793,7 +7793,7 @@ function render() {
   watchSess();
   watchYou();
   watchMirror();
-  if (!shut) { watchBusy(); youPublishSoon(); watchElseMessages(); calAlerts(); }
+  if (!shut) { watchBusy(); youPublishSoon(); watchElseMessages(); watchInbox(); calAlerts(); }
   clubNews();
   paintBell(shut);
 }
@@ -18042,6 +18042,7 @@ function forgetYou() {
   for (const code of [...mirrorWatch.keys()]) unwatchClub(code);
   you = YOU_BLANK(); youWatch = null; youSent = {};
   for (const k of Object.keys(mirrorCache)) delete mirrorCache[k];
+  for (const k of Object.keys(alertClubCache)) delete alertClubCache[k];
   for (const off of busyWatch.values()) try { if (typeof off === 'function') off(); } catch (e) { }
   busyWatch.clear();
   for (const k of Object.keys(busyOf)) delete busyOf[k];
@@ -18333,18 +18334,77 @@ function alertsHere() {
     alerts = { uid: me.uid, list: [], cal: {} };
     try {
       const d = JSON.parse(localStorage.getItem(LS_ALERTS + ':' + me.uid) || 'null');
-      if (d && typeof d === 'object') { alerts.list = Array.isArray(d.list) ? d.list : []; alerts.cal = d.cal && typeof d.cal === 'object' ? d.cal : {}; }
+      if (d && typeof d === 'object') { alerts.list = Array.isArray(d.list) ? d.list : []; alerts.cal = d.cal && typeof d.cal === 'object' ? d.cal : {}; if (Number.isFinite(d.inboxAt)) alerts.inboxAt = d.inboxAt; }
     } catch (e) { }
   }
   return alerts;
 }
-const saveAlerts = () => { if (alerts.uid) keepStored(LS_ALERTS + ':' + alerts.uid, JSON.stringify({ list: alerts.list, cal: alerts.cal })); };
+const saveAlerts = () => { if (alerts.uid) keepStored(LS_ALERTS + ':' + alerts.uid, JSON.stringify({ list: alerts.list, cal: alerts.cal, inboxAt: alerts.inboxAt })); };
 function forgetAlerts() {
   if (alerts.uid) try { localStorage.removeItem(LS_ALERTS + ':' + alerts.uid); } catch (e) { }
   alerts = { uid: null, list: [], cal: {} };
   for (const off of elseMsgSubs.values()) try { if (typeof off === 'function') off(); } catch (e) { }
   elseMsgSubs.clear();
   for (const o of [elseMsg, elsePrimed, mirrorParts]) for (const k of Object.keys(o)) delete o[k];
+  if (inboxOff) try { inboxOff(); } catch (e) { }
+  inboxOff = null; inboxFor = null; inboxLive = false;
+}
+
+/* -- what the server told her, from every club -- */
+/* Notifications are the account's, not the club on screen's: a message, a
+   change to her calendar or club activity in any club of hers reaches her
+   wherever she is looking, as a push to a closed phone does. The server
+   already works out who is told what, in every club (functions/push.js,
+   functions/news.js), and keeps each person a copy at people/{uid}/inbox
+   whether or not she turned notifications on (rules version 37). One
+   listener here reads it: what is about the club open on screen this page
+   hears for itself, so that is left alone; the rest of her clubs are alerts
+   like any other, with Open switching to the club. The first read only
+   takes note of what is there, and what came after is said once.
+
+   While it answers, the page's own guesses about her other clubs (their
+   calendars and messages, worked out from the copy it keeps of each) say
+   nothing: the server's word is the one, and saying both would say it
+   twice. Where the rules are older and the read is refused, those guesses
+   are what she gets, as before. */
+let inboxOff = null, inboxFor = null, inboxLive = false;
+// SERVER.md: her other clubs heard from the inbox the server keeps; once every club is on version 37 the phone's own listening can go.
+function watchInbox() {
+  const key = me && rtdb && fb && !isSandbox() ? me.uid : null;
+  if (key === inboxFor) return;
+  if (inboxOff) try { inboxOff(); } catch (e) { }
+  inboxOff = null; inboxFor = key; inboxLive = false;
+  if (!key) return;
+  const { db, mod } = rtdb;
+  const off = mod.onValue(mod.ref(db, `people/${key}/inbox`), s => {
+    if (!me || me.uid !== key || inboxFor !== key) return;
+    inboxLive = true;
+    if (inboxNews(s.val())) render();
+  }, () => { if (inboxFor === key) { inboxLive = false; render(); } });
+  if (inboxFor === key) inboxOff = typeof off === 'function' ? off : null;
+}
+function inboxNews(v) {
+  alertsHere();
+  if (!alerts.uid) return false;
+  const xs = Object.entries(v && typeof v === 'object' ? v : {})
+    .filter(([, x]) => x && typeof x === 'object' && typeof x.title === 'string' && x.title && typeof x.code === 'string' && Number.isFinite(x.at))
+    .sort((a, b) => a[1].at - b[1].at);
+  const top = xs.reduce((n, [, x]) => Math.max(n, x.at), 0);
+  const mark = alerts.inboxAt;
+  alerts.inboxAt = Math.max(Number(mark) || 0, top);
+  if (!Number.isFinite(mark)) { saveAlerts(); return false; }    // the first look is not news
+  let said = false;
+  for (const [id, x] of xs) {
+    if (x.at <= mark || x.code === wsCode() || (myClubs && !myClubs[x.code]) || retiredClubs[x.code]) continue;
+    const topic = ['msg', 'notice', 'cal', 'news'].includes(x.topic) ? x.topic : '';
+    // only a link inside the app, never somewhere the entry names
+    const hash = /^#\/[\w\/.~:-]*$/.test(String(x.hash || '')) ? x.hash : '#/messages';
+    pushAlert({ id: 'i:' + id, code: x.code, kind: topic === 'msg' || topic === 'notice' ? 'msg' : 'cal', topic, urgent: x.urgent === true,
+      title: String(x.title).slice(0, 200), body: String(x.body || '').slice(0, 240), hash });
+    said = true;
+  }
+  if (alerts.inboxAt !== mark) saveAlerts();
+  return said;
 }
 const clubNameOf = code => code === wsCode() ? ((acc().org || {}).name || 'This club')
   : ((youHere().clubs[code] || {}).name || ((myClubs || {})[code] || {}).name || 'Another club');
@@ -18378,6 +18438,29 @@ function alertCal(code) {
   if (!c || !MIRROR_WS.every(p => (mirrorParts[code] || new Set()).has(p))) return null;
   return mirrorItems(code, c).filter(it => ALERT_KINDS.includes(it.kind));
 }
+/* An admin hears every team's changes in the open club from club activity,
+   which is worked out from the open club alone; so in her other clubs the
+   teams that are not hers were heard by nobody until she opened the club.
+   This is those, from the same copy: every team's games, practices and
+   events but the ones her own calendar already has. Kept apart from hers
+   (`code|club`), so it starts with a first look of its own instead of every
+   game of the club arriving as new, and said as club activity ('news'). */
+const alertClubCache = {};
+function alertClub(code) {
+  if (code === wsCode()) {
+    if ((fb && !wsRead) || needsSignIn() || !(me && isAdmin(me.uid))) return null;
+    return calItems(Object.keys(state.teams)).filter(it => ALERT_KINDS.includes(it.kind)).map(it => ({ ...it, team: (state.teams[it.tid] || {}).name || '' }));
+  }
+  const c = youHere().clubs[code];
+  if (!c || !MIRROR_WS.every(p => (mirrorParts[code] || new Set()).has(p))) return null;
+  const day = todayStr(), had = alertClubCache[code];
+  if (had && had.ver === mirrorVer && had.day === day) return had.items;
+  const items = withClub(c, () => !!me && isAdmin(me.uid)
+    ? calItems(Object.keys(state.teams)).filter(it => ALERT_KINDS.includes(it.kind)).map(it => ({ ...it, team: (state.teams[it.tid] || {}).name || '' }))
+    : null);
+  alertClubCache[code] = { ver: mirrorVer, day, items };
+  return items;
+}
 const alertHash = it => it.kind === 'game' ? `#/team/${it.tid}/game/${it.id}/live` : `#/team/${it.tid}/calendar`;
 // SERVER.md: changes to her calendar worked out on her phone, per club; a server would send them once.
 function calAlerts() {
@@ -18386,36 +18469,44 @@ function calAlerts() {
   const today = todayStr(), codes = [wsCode(), ...youClubs().map(([code]) => code)].filter(Boolean);
   let changed = false;
   for (const code of codes) {
-    // an admin already hears every change in the open club from club activity
-    if (code === wsCode() && canAdmin()) continue;
-    const items = alertCal(code); if (!items) continue;
-    const now = {};
-    for (const it of items) if (it.date && it.date >= today) now[it.key] = [it.date, it.start || '', it.called || ''].join('|');
-    const was = alerts.cal[code];
-    alerts.cal[code] = now;
-    if (canon(was || null) !== canon(now)) changed = true;
-    if (!was) continue;                                   // the first look at a club is not news
-    const series = {};
-    for (const it of items) {
-      const sig = now[it.key]; if (!sig || was[it.key] === sig) continue;
-      if (code === wsCode() && mineTouched.has(it.kind === 'game' ? 'g:' + it.id : `e:${it.tid}:${it.id}`)) continue;
-      const words = `${it.title}${it.team ? ' (' + it.team + ')' : ''}`;
-      const when = whenOfIt(it.date, it.start);
-      const base = { code, kind: 'cal', hash: alertHash(it) };
-      if (!was[it.key]) {
-        if (it.series) { (series[it.series] = series[it.series] || []).push(it); continue; }
-        pushAlert({ ...base, id: `c:${code}:${it.key}:new`, title: `New ${it.kind}: ${words}`, body: `${when}${it.venue ? ' · ' + it.venue : ''}` });
-        continue;
+    const mine = alertCal(code), all = alertClub(code);
+    const views = [];
+    if (mine) views.push({ b: code, items: mine, topic: '' });
+    if (all && mine) { const hers = new Set(mine.map(it => it.key)); views.push({ b: code + '|club', items: all.filter(it => !hers.has(it.key)), topic: 'news' }); }
+    // an admin already hears every change in the open club from club activity, and every club but this one comes from her inbox once it answers: kept up to date here, said there
+    const quiet = (code === wsCode() && canAdmin()) || (code !== wsCode() && inboxLive);
+    for (const { b, items, topic } of views) {
+      const now = {};
+      for (const it of items) if (it.date && it.date >= today) now[it.key] = [it.date, it.start || '', it.called || ''].join('|');
+      const was = alerts.cal[b];
+      alerts.cal[b] = now;
+      if (canon(was || null) !== canon(now)) changed = true;
+      if (!was || quiet) continue;                          // the first look at a club is not news
+      const series = {};
+      for (const it of items) {
+        const sig = now[it.key]; if (!sig || was[it.key] === sig) continue;
+        if (code === wsCode() && mineTouched.has(it.kind === 'game' ? 'g:' + it.id : `e:${it.tid}:${it.id}`)) continue;
+        const words = `${it.title}${it.team ? ' (' + it.team + ')' : ''}`;
+        const when = whenOfIt(it.date, it.start);
+        const base = { code, kind: 'cal', hash: alertHash(it), ...(topic ? { topic } : {}) };
+        if (!was[it.key]) {
+          // a weekly series, or one booking for several teams, is one piece of news
+          const g = it.joint ? 'j:' + it.joint : it.series;
+          if (g) { (series[g] = series[g] || []).push(it); continue; }
+          pushAlert({ ...base, id: `c:${code}:${it.key}:new`, title: `New ${it.kind}: ${words}`, body: `${when}${it.venue ? ' · ' + it.venue : ''}` });
+          continue;
+        }
+        const [od, os, oc] = was[it.key].split('|');
+        if (it.called && it.called !== oc) pushAlert({ ...base, urgent: true, id: `c:${code}:${it.key}:${sig}`, title: `${CALLED[it.called] || 'Called off'}: ${words}`, body: when });
+        else if (!it.called && oc) pushAlert({ ...base, id: `c:${code}:${it.key}:${sig}`, title: `Back on: ${words}`, body: when });
+        else if (od !== it.date || os !== (it.start || '')) pushAlert({ ...base, urgent: od !== it.date || Math.abs(minOf(os || '00:00') - minOf(it.start || '00:00')) >= 30, id: `c:${code}:${it.key}:${sig}`, title: `Moved: ${words}`, body: `Now ${when}` });
       }
-      const [od, os, oc] = was[it.key].split('|');
-      if (it.called && it.called !== oc) pushAlert({ ...base, urgent: true, id: `c:${code}:${it.key}:${sig}`, title: `${CALLED[it.called] || 'Called off'}: ${words}`, body: when });
-      else if (!it.called && oc) pushAlert({ ...base, id: `c:${code}:${it.key}:${sig}`, title: `Back on: ${words}`, body: when });
-      else if (od !== it.date || os !== (it.start || '')) pushAlert({ ...base, urgent: od !== it.date || Math.abs(minOf(os || '00:00') - minOf(it.start || '00:00')) >= 30, id: `c:${code}:${it.key}:${sig}`, title: `Moved: ${words}`, body: `Now ${when}` });
-    }
-    // a weekly series is one piece of news, not ten
-    for (const xs of Object.values(series)) {
-      const it = xs[0];
-      pushAlert({ code, kind: 'cal', hash: alertHash(it), id: `c:${code}:r:${it.series}`, title: `New ${it.kind}${xs.length > 1 ? 's' : ''}: ${it.title}${it.team ? ' (' + it.team + ')' : ''}`, body: xs.length > 1 ? `${xs.length} of them, from ${whenOfIt(it.date, it.start)}` : whenOfIt(it.date, it.start) });
+      // a weekly series is one piece of news, not ten
+      for (const [g, xs] of Object.entries(series)) {
+        const it = xs[0], teamsIn = new Set(xs.map(x => x.tid)).size;
+        const who = teamsIn > 1 ? ` (${teamsIn} teams)` : it.team ? ' (' + it.team + ')' : '';
+        pushAlert({ code, kind: 'cal', ...(topic ? { topic } : {}), hash: alertHash(it), id: `c:${code}:r:${g}`, title: `New ${it.kind}${xs.length > 1 ? 's' : ''}: ${it.title}${who}`, body: xs.length > 1 && teamsIn === 1 ? `${xs.length} of them, from ${whenOfIt(it.date, it.start)}` : whenOfIt(it.date, it.start) });
+      }
     }
   }
   if (changed) saveAlerts();
@@ -18480,7 +18571,8 @@ function elseMsgItems(p) {
 function elseMsgNews(p) {
   const items = elseMsgItems(p), known = elsePrimed[p];
   elsePrimed[p] = new Set(items.map(x => x.id));
-  if (!known) return;
+  // her inbox says it, once it answers (watchInbox())
+  if (!known || inboxLive) return;
   for (const x of items) if (!known.has(x.id) && x.by !== me.uid && !x.seen)
     pushAlert({ id: 'm:' + x.id, code: elseMsg[p].code, kind: 'msg', topic: elseMsg[p].kind === 'board' ? 'notice' : 'msg', urgent: x.urgent, title: x.title, body: x.body, hash: x.hash });
 }

@@ -346,8 +346,15 @@ does the bookkeeping, not that the phone works offline first.
   Messages are pushed (build 104, *Notifications* above), and so is a game
   or practice of hers called off, back on, moved or new in the next two
   weeks (build 105, `functions/push.js`), from every club she is in, since a
-  token is per account, not per club. The bar here still comes from the
-  phone, for a phone without notifications turned on.
+  token is per account, not per club. Since build 185 the bar comes from
+  the server too: beside every push it keeps her a copy at
+  `people/{uid}/inbox` (rules version 37), with or without a phone turned
+  on, and the page reads that one path for every club but the open one
+  (`watchInbox()`), so colleagues' and people's conversations, club activity
+  and session news in her other clubs reach her as well. The phone's own
+  listening to every club is quiet while the inbox answers and is what she
+  gets where the rules are older; it can come out once every club is on
+  version 37.
 
 ### Email
 - **Moved (build 135):** the club sends its own email (`functions/mail.js`,
