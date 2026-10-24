@@ -881,7 +881,7 @@
     },
     "rulesVersion": {
       ".read": true,
-      ".write": "newData.isNumber() && newData.val() === 36"
+      ".write": "newData.isNumber() && newData.val() === 37"
     },
     "public": {
       "$share": {
@@ -1638,6 +1638,10 @@
           "$other": {
             ".validate": false
           }
+        },
+        "inbox": {
+          ".read": "auth != null && auth.uid === $uid",
+          ".write": false
         },
         "mute": {
           ".read": "auth != null && auth.uid === $uid",

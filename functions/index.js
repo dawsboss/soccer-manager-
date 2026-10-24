@@ -49,8 +49,9 @@ const forget = require('./forget');
 
 initializeApp();
 
-/* What push.js is allowed to touch: reads, deletes and the one transaction it
-   keeps its own notes with, on this event's own database, and Cloud Messaging. */
+/* What push.js is allowed to touch: reads, deletes, the one transaction it
+   keeps its own notes with and each person's own inbox, on this event's own
+   database, and Cloud Messaging. */
 function envOf(event) {
   // a create hands over the snapshot, a write a before/after pair
   const root = (event.data.after || event.data).ref.root;
@@ -59,7 +60,11 @@ function envOf(event) {
     remove: p => root.child(p).remove(),
     send: messages => getMessaging().sendEach(messages),
     // a transaction: `fn` gets what is there and returns what to write, or undefined to leave it
-    claim: (p, fn) => root.child(p).transaction(fn).then(r => !!r.committed)
+    claim: (p, fn) => root.child(p).transaction(fn).then(r => !!r.committed),
+    // each person's own inbox, people/{uid}/inbox/{id}, and nothing else of hers: null takes one away
+    inbox: (u, id, v) => (/^[^.#$\[\]\/]{1,128}$/.test(String(u)) && /^[^.#$\[\]\/]{1,200}$/.test(String(id))
+      ? (v === null ? root.child(`people/${u}/inbox/${id}`).remove() : root.child(`people/${u}/inbox/${id}`).set(v))
+      : Promise.reject(new Error('inbox entries only')))
   };
 }
 

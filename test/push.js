@@ -89,6 +89,32 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     check('and never calls an AI model', /anthropic|openai|gemini|generativ/i.test(src + fs.readFileSync(path.join(__dirname, '..', 'functions', 'push.js'), 'utf8')), false);
   }
 
+  console.log('\n--- each person\'s own inbox, beside every push ---');
+  {
+    // a phone open on another club hears this one from here (watchInbox() in app.js), with or without notifications turned on
+    const S = server({ people: { trk: { mute: { notice: true } } } });
+    S.put('pushTokens/mum', null);
+    await S.fire('board/CLUB/t1/n1', { by: 'coach', byName: 'Jaz', at: 5, text: 'Bring water', urgent: true });
+    const e = (S.at('people/mum/inbox') || {})['CLUB~n1'] || {};
+    check('a family with no phone turned on still has it in her inbox', e.title + ' · ' + e.body, 'Urgent · Flight · Jaz · Bring water');
+    check('with its club, where it opens, its kind and that it is urgent', [e.code, e.hash, e.topic, e.urgent].join(' '), 'CLUB #/messages notice true');
+    check('and when the server said it', typeof e.at, 'number');
+    check('nothing for whoever wrote it', S.at('people/coach/inbox'), null);
+    check('nothing for a kind she turned off', S.at('people/trk/inbox'), null);
+    check('nothing for someone who cannot read it', S.at('people/dad/inbox'), null);
+    await S.fire('board/CLUB/t1/n1', { by: 'coach', byName: 'Jaz', at: 5, text: 'Bring water', urgent: true });
+    check('an event delivered twice is one entry', Object.keys(S.at('people/mum/inbox') || {}).length, 1);
+    const many = {};
+    for (let i = 0; i < push.INBOX_KEEP + 5; i++) many['CLUB~old' + i] = { title: 'Old', code: 'CLUB', at: Date.now() - 1000 + i };
+    many['CLUB~stale'] = { title: 'Stale', code: 'CLUB', at: Date.now() - (push.INBOX_DAYS + 1) * 864e5 };
+    S.put('people/rosamum/inbox', many);
+    await S.fire('board/CLUB/t1/n2', { by: 'coach', byName: 'Jaz', at: 6, text: 'Kit is blue' });
+    const box = S.at('people/rosamum/inbox') || {};
+    check('kept to the newest ' + push.INBOX_KEEP, Object.keys(box).length, push.INBOX_KEEP);
+    check('the new one among them, the oldest gone', !!box['CLUB~n2'] && !box['CLUB~old0'] && !box['CLUB~stale'], true);
+    check('an id with a dot or a slash in its tag is made safe', push.inboxId('CLUB', 'cal:CLUB:a.b/c'), 'CLUB~cal:CLUB:a_b_c');
+  }
+
   console.log('\n--- a team notice: who hears it ---');
   {
     const S = server();
@@ -113,8 +139,8 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     check('sent at once, kept for a day at most', JSON.stringify(m.webpush.headers), JSON.stringify({ Urgency: 'high', TTL: '86400' }));
     check('every value a string, as Cloud Messaging requires', Object.values(m.data).every(v => typeof v === 'string'), true);
     // this club, on whichever tree it is (asking which is a read of the new one's admins and index)
-    const reads = S.reads.filter(p => !/^((workspaces|orgs)\/CLUB\/|retired\/CLUB$|pushTokens\/|people\/[^/]+\/mute\/notice$)/.test(p));
-    deepEq('it read nothing but this club, each reader\'s switch for notices, and the phones it sent to', reads, []);
+    const reads = S.reads.filter(p => !/^((workspaces|orgs)\/CLUB\/|retired\/CLUB$|pushTokens\/|people\/[^/]+\/mute\/notice$|people\/[^/]+\/inbox$)/.test(p));
+    deepEq('it read nothing but this club, each reader\'s switch for notices, her inbox, and the phones it sent to', reads, []);
     check('and no phone of anyone it did not send to', S.reads.filter(p => /^pushTokens\/(coach|other|dad|newbie|stale)$/.test(p)).length, 0);
   }
   {
@@ -141,8 +167,8 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     const m = toUid(S, 'other')[0];
     check('titled with who wrote it', m.data.title, 'Jaz');
     check('opening the conversation with her', m.data.hash, '#/messages/with/coach');
-    const reads = S.reads.filter(p => !/^((workspaces|orgs)\/CLUB\/access\/(admins|coachIndex|sessionCoaches|index)$|retired\/CLUB$|pushTokens\/other$|people\/other\/mute\/msg$)/.test(p));
-    deepEq('it read the three tables, her switch for messages, and her phones, nothing else', reads, []);
+    const reads = S.reads.filter(p => !/^((workspaces|orgs)\/CLUB\/access\/(admins|coachIndex|sessionCoaches|index)$|retired\/CLUB$|pushTokens\/other$|people\/other\/mute\/msg$|people\/other\/inbox$)/.test(p));
+    deepEq('it read the three tables, her switch for messages, her inbox and her phones, nothing else', reads, []);
   }
   {
     const S = server();
@@ -178,8 +204,8 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     check('not the admins, who read it but are not told', toUid(S, 'adm').length, 0);
     const m = toUid(S, 'mum')[0];
     check('titled with who wrote it, opening the conversation with her', m.data.title + ' ' + m.data.hash, 'Jaz #/messages/with/coach');
-    const reads = S.reads.filter(p => !/^((workspaces|orgs)\/CLUB\/access\/(admins|coachIndex|helperIndex|sessionCoaches|playerIndex|index)$|retired\/CLUB$|pushTokens\/mum$|people\/mum\/mute\/msg$)/.test(p));
-    deepEq('it read the six tables, her switch for messages, and her phones, nothing else', reads, []);
+    const reads = S.reads.filter(p => !/^((workspaces|orgs)\/CLUB\/access\/(admins|coachIndex|helperIndex|sessionCoaches|playerIndex|index)$|retired\/CLUB$|pushTokens\/mum$|people\/mum\/mute\/msg$|people\/mum\/inbox$)/.test(p));
+    deepEq('it read the six tables, her switch for messages, her inbox and her phones, nothing else', reads, []);
     // a player's own sign-in is never in one (playerIndex, rules version 36): nobody is told
     const S3 = server();
     await S3.fire('workspaces/CLUB/access/playerIndex/ella', 't1');

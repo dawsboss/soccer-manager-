@@ -248,5 +248,48 @@ const ORGS = { CLUB: { name: 'Lakeside SC', at: 1 }, HILL: { name: 'Hillside', a
     check('a family there hears nothing of a team that isn\'t her child\'s', fam.D.alertsList().some(x => /Hill U9/.test(x.title)), false);
   }
 
+  console.log('\n--- her inbox: everything the server told her, from every club ---');
+  {
+    const { D, fbk } = await boot('jaz', ORGS);
+    await hillAnswers(D, fbk, { matches: game() });
+    check('one listener for the whole account', fbk.watching('people/jaz/inbox'), true);
+    const box = {
+      'HILL~old': { title: 'Old news', body: 'Before', code: 'HILL', hash: '#/messages', topic: 'msg', at: 100 }
+    };
+    fbk.deliver('people/jaz/inbox', box); await D.flush(); D.render();
+    check('the first look is not news', D.alertsList().length, 0);
+    D.ui.view = 'game'; D.render(); D.toasts.length = 0;
+    box['HILL~s1'] = { title: 'Ada', body: 'Can you cover Saturday?', code: 'HILL', hash: '#/messages/with/hadm', topic: 'msg', at: 200 };
+    box['CLUB~n9'] = { title: 'G11 Flight · Ada', body: 'Here', code: 'CLUB', hash: '#/messages', topic: 'notice', at: 201 };
+    box['GONE~x'] = { title: 'Not hers', code: 'GONE', hash: '#/messages', topic: 'msg', at: 202 };
+    fbk.deliver('people/jaz/inbox', box); await D.flush(); D.render();
+    const a = D.alertsList()[0];
+    check('a colleague\'s message in the club that isn\'t open reaches her', a && a.title + ' · ' + a.body, 'Ada · Can you cover Saturday?');
+    check('it pops up, naming the club', /Hillside FC · Ada/.test(D.toasts.join('|')), true);
+    check('over whatever is on screen, with Open in that club', /Open in Hillside FC/.test(bar(D)), true);
+    check('what is about the open club is left to the page, which hears it itself', D.alertsList().some(x => /Here/.test(x.body)), false);
+    check('and a club she is not in says nothing', D.alertsList().some(x => /Not hers/.test(x.title)), false);
+    fbk.deliver('people/jaz/inbox', { ...box }); await D.flush(); D.render();
+    check('once', D.alertsList().length, 1);
+    D.click({ act: 'alertgo', id: a.id });
+    check('Open switches club and lands on the conversation', D.storage.getItem('sm.workspace') + ' ' + D.dom.replaced, 'HILL /#/messages/with/hadm');
+    D.storage.setItem('sm.workspace', 'CLUB');
+    box['HILL~bad'] = { title: 'Odd', code: 'HILL', hash: 'https://evil.test/', topic: 'news', at: 300 };
+    fbk.deliver('people/jaz/inbox', box); await D.flush(); D.render();
+    check('a link out of the app is never followed', D.alertsList()[0].hash, '#/messages');
+    check('club activity is said under its own switch', D.alertsList()[0].topic + ' ' + D.alertsList()[0].kind, 'news cal');
+    const n = D.alertsList().length;
+    fbk.deliver('orgs/HILL/matches', game({ called: 'cancelled' })); await D.flush(); D.render();
+    check('while it answers, the page\'s own guess about that club says nothing (the server says it)', D.alertsList().length, n);
+  }
+  {
+    // a phone that was signed in before keeps its place: what came while it was closed is said
+    const { D, fbk } = await boot('jaz', ORGS);
+    await hillAnswers(D, fbk);
+    fbk.deliver('people/jaz/inbox', { 'HILL~a': { title: 'A', code: 'HILL', hash: '#/messages', topic: 'msg', at: 100 } }); await D.flush();
+    const kept = D.storage.getItem('sm.alerts.v1:jaz');
+    check('where she had read up to is kept on the phone', JSON.parse(kept).inboxAt, 100);
+  }
+
   H.summary('alerts from every club');
 })();

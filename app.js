@@ -11,7 +11,7 @@ const BUILT = '2026-10-14';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 36;
+const RULES_VERSION = 37;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -7793,7 +7793,7 @@ function render() {
   watchSess();
   watchYou();
   watchMirror();
-  if (!shut) { watchBusy(); youPublishSoon(); watchElseMessages(); calAlerts(); }
+  if (!shut) { watchBusy(); youPublishSoon(); watchElseMessages(); watchInbox(); calAlerts(); }
   clubNews();
   paintBell(shut);
 }
@@ -18334,18 +18334,76 @@ function alertsHere() {
     alerts = { uid: me.uid, list: [], cal: {} };
     try {
       const d = JSON.parse(localStorage.getItem(LS_ALERTS + ':' + me.uid) || 'null');
-      if (d && typeof d === 'object') { alerts.list = Array.isArray(d.list) ? d.list : []; alerts.cal = d.cal && typeof d.cal === 'object' ? d.cal : {}; }
+      if (d && typeof d === 'object') { alerts.list = Array.isArray(d.list) ? d.list : []; alerts.cal = d.cal && typeof d.cal === 'object' ? d.cal : {}; if (Number.isFinite(d.inboxAt)) alerts.inboxAt = d.inboxAt; }
     } catch (e) { }
   }
   return alerts;
 }
-const saveAlerts = () => { if (alerts.uid) keepStored(LS_ALERTS + ':' + alerts.uid, JSON.stringify({ list: alerts.list, cal: alerts.cal })); };
+const saveAlerts = () => { if (alerts.uid) keepStored(LS_ALERTS + ':' + alerts.uid, JSON.stringify({ list: alerts.list, cal: alerts.cal, inboxAt: alerts.inboxAt })); };
 function forgetAlerts() {
   if (alerts.uid) try { localStorage.removeItem(LS_ALERTS + ':' + alerts.uid); } catch (e) { }
   alerts = { uid: null, list: [], cal: {} };
   for (const off of elseMsgSubs.values()) try { if (typeof off === 'function') off(); } catch (e) { }
   elseMsgSubs.clear();
   for (const o of [elseMsg, elsePrimed, mirrorParts]) for (const k of Object.keys(o)) delete o[k];
+  if (inboxOff) try { inboxOff(); } catch (e) { }
+  inboxOff = null; inboxFor = null; inboxLive = false;
+}
+
+/* -- what the server told her, from every club -- */
+/* Notifications are the account's, not the club on screen's: a message, a
+   change to her calendar or club activity in any club of hers reaches her
+   wherever she is looking, as a push to a closed phone does. The server
+   already works out who is told what, in every club (functions/push.js,
+   functions/news.js), and keeps each person a copy at people/{uid}/inbox
+   whether or not she turned notifications on (rules version 37). One
+   listener here reads it: what is about the club open on screen this page
+   hears for itself, so that is left alone; the rest of her clubs are alerts
+   like any other, with Open switching to the club. The first read only
+   takes note of what is there, and what came after is said once.
+
+   While it answers, the page's own guesses about her other clubs (their
+   calendars and messages, worked out from the copy it keeps of each) say
+   nothing: the server's word is the one, and saying both would say it
+   twice. Where the rules are older and the read is refused, those guesses
+   are what she gets, as before. */
+let inboxOff = null, inboxFor = null, inboxLive = false;
+function watchInbox() {
+  const key = me && rtdb && fb && !isSandbox() ? me.uid : null;
+  if (key === inboxFor) return;
+  if (inboxOff) try { inboxOff(); } catch (e) { }
+  inboxOff = null; inboxFor = key; inboxLive = false;
+  if (!key) return;
+  const { db, mod } = rtdb;
+  const off = mod.onValue(mod.ref(db, `people/${key}/inbox`), s => {
+    if (!me || me.uid !== key || inboxFor !== key) return;
+    inboxLive = true;
+    if (inboxNews(s.val())) render();
+  }, () => { if (inboxFor === key) { inboxLive = false; render(); } });
+  if (inboxFor === key) inboxOff = typeof off === 'function' ? off : null;
+}
+function inboxNews(v) {
+  alertsHere();
+  if (!alerts.uid) return false;
+  const xs = Object.entries(v && typeof v === 'object' ? v : {})
+    .filter(([, x]) => x && typeof x === 'object' && typeof x.title === 'string' && x.title && typeof x.code === 'string' && Number.isFinite(x.at))
+    .sort((a, b) => a[1].at - b[1].at);
+  const top = xs.reduce((n, [, x]) => Math.max(n, x.at), 0);
+  const mark = alerts.inboxAt;
+  alerts.inboxAt = Math.max(Number(mark) || 0, top);
+  if (!Number.isFinite(mark)) { saveAlerts(); return false; }    // the first look is not news
+  let said = false;
+  for (const [id, x] of xs) {
+    if (x.at <= mark || x.code === wsCode() || (myClubs && !myClubs[x.code]) || retiredClubs[x.code]) continue;
+    const topic = ['msg', 'notice', 'cal', 'news'].includes(x.topic) ? x.topic : '';
+    // only a link inside the app, never somewhere the entry names
+    const hash = /^#\/[\w\/.~:-]*$/.test(String(x.hash || '')) ? x.hash : '#/messages';
+    pushAlert({ id: 'i:' + id, code: x.code, kind: topic === 'msg' || topic === 'notice' ? 'msg' : 'cal', topic, urgent: x.urgent === true,
+      title: String(x.title).slice(0, 200), body: String(x.body || '').slice(0, 240), hash });
+    said = true;
+  }
+  if (alerts.inboxAt !== mark) saveAlerts();
+  return said;
 }
 const clubNameOf = code => code === wsCode() ? ((acc().org || {}).name || 'This club')
   : ((youHere().clubs[code] || {}).name || ((myClubs || {})[code] || {}).name || 'Another club');
@@ -18414,8 +18472,8 @@ function calAlerts() {
     const views = [];
     if (mine) views.push({ b: code, items: mine, topic: '' });
     if (all && mine) { const hers = new Set(mine.map(it => it.key)); views.push({ b: code + '|club', items: all.filter(it => !hers.has(it.key)), topic: 'news' }); }
-    // an admin already hears every change in the open club from club activity: kept up to date here, said there
-    const quiet = code === wsCode() && canAdmin();
+    // an admin already hears every change in the open club from club activity, and every club but this one comes from her inbox once it answers: kept up to date here, said there
+    const quiet = (code === wsCode() && canAdmin()) || (code !== wsCode() && inboxLive);
     for (const { b, items, topic } of views) {
       const now = {};
       for (const it of items) if (it.date && it.date >= today) now[it.key] = [it.date, it.start || '', it.called || ''].join('|');
@@ -18512,7 +18570,8 @@ function elseMsgItems(p) {
 function elseMsgNews(p) {
   const items = elseMsgItems(p), known = elsePrimed[p];
   elsePrimed[p] = new Set(items.map(x => x.id));
-  if (!known) return;
+  // her inbox says it, once it answers (watchInbox())
+  if (!known || inboxLive) return;
   for (const x of items) if (!known.has(x.id) && x.by !== me.uid && !x.seen)
     pushAlert({ id: 'm:' + x.id, code: elseMsg[p].code, kind: 'msg', topic: elseMsg[p].kind === 'board' ? 'notice' : 'msg', urgent: x.urgent, title: x.title, body: x.body, hash: x.hash });
 }
