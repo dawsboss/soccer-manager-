@@ -18368,6 +18368,7 @@ function forgetAlerts() {
    twice. Where the rules are older and the read is refused, those guesses
    are what she gets, as before. */
 let inboxOff = null, inboxFor = null, inboxLive = false;
+// SERVER.md: her other clubs heard from the inbox the server keeps; once every club is on version 37 the phone's own listening can go.
 function watchInbox() {
   const key = me && rtdb && fb && !isSandbox() ? me.uid : null;
   if (key === inboxFor) return;
