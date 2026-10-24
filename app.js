@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '184';
+const BUILD = '185';
 const BUILT = '2026-10-14';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -18042,6 +18042,7 @@ function forgetYou() {
   for (const code of [...mirrorWatch.keys()]) unwatchClub(code);
   you = YOU_BLANK(); youWatch = null; youSent = {};
   for (const k of Object.keys(mirrorCache)) delete mirrorCache[k];
+  for (const k of Object.keys(alertClubCache)) delete alertClubCache[k];
   for (const off of busyWatch.values()) try { if (typeof off === 'function') off(); } catch (e) { }
   busyWatch.clear();
   for (const k of Object.keys(busyOf)) delete busyOf[k];
@@ -18378,6 +18379,29 @@ function alertCal(code) {
   if (!c || !MIRROR_WS.every(p => (mirrorParts[code] || new Set()).has(p))) return null;
   return mirrorItems(code, c).filter(it => ALERT_KINDS.includes(it.kind));
 }
+/* An admin hears every team's changes in the open club from club activity,
+   which is worked out from the open club alone; so in her other clubs the
+   teams that are not hers were heard by nobody until she opened the club.
+   This is those, from the same copy: every team's games, practices and
+   events but the ones her own calendar already has. Kept apart from hers
+   (`code|club`), so it starts with a first look of its own instead of every
+   game of the club arriving as new, and said as club activity ('news'). */
+const alertClubCache = {};
+function alertClub(code) {
+  if (code === wsCode()) {
+    if ((fb && !wsRead) || needsSignIn() || !(me && isAdmin(me.uid))) return null;
+    return calItems(Object.keys(state.teams)).filter(it => ALERT_KINDS.includes(it.kind)).map(it => ({ ...it, team: (state.teams[it.tid] || {}).name || '' }));
+  }
+  const c = youHere().clubs[code];
+  if (!c || !MIRROR_WS.every(p => (mirrorParts[code] || new Set()).has(p))) return null;
+  const day = todayStr(), had = alertClubCache[code];
+  if (had && had.ver === mirrorVer && had.day === day) return had.items;
+  const items = withClub(c, () => !!me && isAdmin(me.uid)
+    ? calItems(Object.keys(state.teams)).filter(it => ALERT_KINDS.includes(it.kind)).map(it => ({ ...it, team: (state.teams[it.tid] || {}).name || '' }))
+    : null);
+  alertClubCache[code] = { ver: mirrorVer, day, items };
+  return items;
+}
 const alertHash = it => it.kind === 'game' ? `#/team/${it.tid}/game/${it.id}/live` : `#/team/${it.tid}/calendar`;
 // SERVER.md: changes to her calendar worked out on her phone, per club; a server would send them once.
 function calAlerts() {
@@ -18386,36 +18410,44 @@ function calAlerts() {
   const today = todayStr(), codes = [wsCode(), ...youClubs().map(([code]) => code)].filter(Boolean);
   let changed = false;
   for (const code of codes) {
-    // an admin already hears every change in the open club from club activity
-    if (code === wsCode() && canAdmin()) continue;
-    const items = alertCal(code); if (!items) continue;
-    const now = {};
-    for (const it of items) if (it.date && it.date >= today) now[it.key] = [it.date, it.start || '', it.called || ''].join('|');
-    const was = alerts.cal[code];
-    alerts.cal[code] = now;
-    if (canon(was || null) !== canon(now)) changed = true;
-    if (!was) continue;                                   // the first look at a club is not news
-    const series = {};
-    for (const it of items) {
-      const sig = now[it.key]; if (!sig || was[it.key] === sig) continue;
-      if (code === wsCode() && mineTouched.has(it.kind === 'game' ? 'g:' + it.id : `e:${it.tid}:${it.id}`)) continue;
-      const words = `${it.title}${it.team ? ' (' + it.team + ')' : ''}`;
-      const when = whenOfIt(it.date, it.start);
-      const base = { code, kind: 'cal', hash: alertHash(it) };
-      if (!was[it.key]) {
-        if (it.series) { (series[it.series] = series[it.series] || []).push(it); continue; }
-        pushAlert({ ...base, id: `c:${code}:${it.key}:new`, title: `New ${it.kind}: ${words}`, body: `${when}${it.venue ? ' · ' + it.venue : ''}` });
-        continue;
+    const mine = alertCal(code), all = alertClub(code);
+    const views = [];
+    if (mine) views.push({ b: code, items: mine, topic: '' });
+    if (all && mine) { const hers = new Set(mine.map(it => it.key)); views.push({ b: code + '|club', items: all.filter(it => !hers.has(it.key)), topic: 'news' }); }
+    // an admin already hears every change in the open club from club activity: kept up to date here, said there
+    const quiet = code === wsCode() && canAdmin();
+    for (const { b, items, topic } of views) {
+      const now = {};
+      for (const it of items) if (it.date && it.date >= today) now[it.key] = [it.date, it.start || '', it.called || ''].join('|');
+      const was = alerts.cal[b];
+      alerts.cal[b] = now;
+      if (canon(was || null) !== canon(now)) changed = true;
+      if (!was || quiet) continue;                          // the first look at a club is not news
+      const series = {};
+      for (const it of items) {
+        const sig = now[it.key]; if (!sig || was[it.key] === sig) continue;
+        if (code === wsCode() && mineTouched.has(it.kind === 'game' ? 'g:' + it.id : `e:${it.tid}:${it.id}`)) continue;
+        const words = `${it.title}${it.team ? ' (' + it.team + ')' : ''}`;
+        const when = whenOfIt(it.date, it.start);
+        const base = { code, kind: 'cal', hash: alertHash(it), ...(topic ? { topic } : {}) };
+        if (!was[it.key]) {
+          // a weekly series, or one booking for several teams, is one piece of news
+          const g = it.joint ? 'j:' + it.joint : it.series;
+          if (g) { (series[g] = series[g] || []).push(it); continue; }
+          pushAlert({ ...base, id: `c:${code}:${it.key}:new`, title: `New ${it.kind}: ${words}`, body: `${when}${it.venue ? ' · ' + it.venue : ''}` });
+          continue;
+        }
+        const [od, os, oc] = was[it.key].split('|');
+        if (it.called && it.called !== oc) pushAlert({ ...base, urgent: true, id: `c:${code}:${it.key}:${sig}`, title: `${CALLED[it.called] || 'Called off'}: ${words}`, body: when });
+        else if (!it.called && oc) pushAlert({ ...base, id: `c:${code}:${it.key}:${sig}`, title: `Back on: ${words}`, body: when });
+        else if (od !== it.date || os !== (it.start || '')) pushAlert({ ...base, urgent: od !== it.date || Math.abs(minOf(os || '00:00') - minOf(it.start || '00:00')) >= 30, id: `c:${code}:${it.key}:${sig}`, title: `Moved: ${words}`, body: `Now ${when}` });
       }
-      const [od, os, oc] = was[it.key].split('|');
-      if (it.called && it.called !== oc) pushAlert({ ...base, urgent: true, id: `c:${code}:${it.key}:${sig}`, title: `${CALLED[it.called] || 'Called off'}: ${words}`, body: when });
-      else if (!it.called && oc) pushAlert({ ...base, id: `c:${code}:${it.key}:${sig}`, title: `Back on: ${words}`, body: when });
-      else if (od !== it.date || os !== (it.start || '')) pushAlert({ ...base, urgent: od !== it.date || Math.abs(minOf(os || '00:00') - minOf(it.start || '00:00')) >= 30, id: `c:${code}:${it.key}:${sig}`, title: `Moved: ${words}`, body: `Now ${when}` });
-    }
-    // a weekly series is one piece of news, not ten
-    for (const xs of Object.values(series)) {
-      const it = xs[0];
-      pushAlert({ code, kind: 'cal', hash: alertHash(it), id: `c:${code}:r:${it.series}`, title: `New ${it.kind}${xs.length > 1 ? 's' : ''}: ${it.title}${it.team ? ' (' + it.team + ')' : ''}`, body: xs.length > 1 ? `${xs.length} of them, from ${whenOfIt(it.date, it.start)}` : whenOfIt(it.date, it.start) });
+      // a weekly series is one piece of news, not ten
+      for (const [g, xs] of Object.entries(series)) {
+        const it = xs[0], teamsIn = new Set(xs.map(x => x.tid)).size;
+        const who = teamsIn > 1 ? ` (${teamsIn} teams)` : it.team ? ' (' + it.team + ')' : '';
+        pushAlert({ code, kind: 'cal', ...(topic ? { topic } : {}), hash: alertHash(it), id: `c:${code}:r:${g}`, title: `New ${it.kind}${xs.length > 1 ? 's' : ''}: ${it.title}${who}`, body: xs.length > 1 && teamsIn === 1 ? `${xs.length} of them, from ${whenOfIt(it.date, it.start)}` : whenOfIt(it.date, it.start) });
+      }
     }
   }
   if (changed) saveAlerts();

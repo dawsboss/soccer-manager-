@@ -215,5 +215,38 @@ const ORGS = { CLUB: { name: 'Lakeside SC', at: 1 }, HILL: { name: 'Hillside', a
     check('hears it once, from club activity, not twice', D.alertsList().length, 0);
   }
 
+  console.log('\n--- an admin of the club that isn\'t open ---');
+  {
+    // her club activity is worked out from the open club alone, so a game on a team that isn't hers in another club was heard by nobody until she opened it
+    const two = (g = {}) => ({ ...hill.teams(g), h2: { id: 'h2', name: 'Hill U9', events: g.h2 || {}, players: {} } });
+    const ws = club(); ws.access.index.hadm = true; ws.access.index.pat = true;
+    const hillTwo = async (D, fbk, matches) => {
+      await fbk.serveClub('HILL', { access: hill.access, teams: two(), matches }, D.flush);
+      for (const p of ['sessions', 'booked', 'avail']) fbk.deliver('training/HILL/' + p, {});
+      await D.flush(); D.render(); await D.flush();
+    };
+    const g2 = { g2: { id: 'g2', teamId: 'h2', opponent: 'Rivers', date: day(6), kickoff: '09:00', periodCount: 2, periodMinutes: 25 } };
+    const { D, fbk } = await boot('hadm', ORGS, ws);
+    await hillTwo(D, fbk, game());
+    check('the first look at the club is not news', D.alertsList().length, 0);
+    fbk.deliver('orgs/HILL/matches', { ...game(), ...g2 }); await D.flush(); D.render();
+    const a = D.alertsList()[0];
+    check('a game added to any team there is', a && a.title, 'New game: v Rivers (Hill U9)');
+    check('said as club activity, so the club activity switch quiets it', a && a.topic, 'news');
+    check('over the screen she is on, naming the club', /Open in Hillside FC/.test(bar(D)), true);
+    check('once', (D.render(), D.alertsList().length), 1);
+    fbk.deliver('orgs/HILL/matches', { ...game(), g2: { ...g2.g2, called: 'cancelled' } }); await D.flush(); D.render();
+    check('and called off', D.alertsList()[0].title, 'Cancelled: v Rivers (Hill U9)');
+    const wk = {};
+    for (const n of [5, 12]) wk['x' + n] = { id: 'x' + n, kind: 'practice', title: 'Practice', date: day(n), start: '18:00', series: 'S2' };
+    fbk.deliver('orgs/HILL/teams', two({ h2: wk })); await D.flush(); D.render();
+    check('a weekly practice is one', D.alertsList()[0].title, 'New practices: Practice (Hill U9)');
+
+    const fam = await boot('pat', ORGS, ws);
+    await hillTwo(fam.D, fam.fbk, game());
+    fam.fbk.deliver('orgs/HILL/matches', { ...game(), ...g2 }); await fam.D.flush(); fam.D.render();
+    check('a family there hears nothing of a team that isn\'t her child\'s', fam.D.alertsList().some(x => /Hill U9/.test(x.title)), false);
+  }
+
   H.summary('alerts from every club');
 })();
