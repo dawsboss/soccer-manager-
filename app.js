@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '185';
+const BUILD = '186';
 const BUILT = '2026-10-14';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -1751,7 +1751,7 @@ function sheetInfo(k) {
 }
 const refusedWhy = () => `The club\u2019s set-up is out of date: ${canAdmin() ? 'Check readiness, under Settings \u2192 Advanced, says what to do' : 'tell the club admin'}.`;
 const refusedMsg = (kept, lead = 'That didn\u2019t save.') => `${lead} ${kept ? 'It is kept on this phone. ' : ''}${refusedWhy()}`;
-const ROLE_LABEL = { owner: 'App owner', admin: 'Club admin', coach: 'Coach', tracker: 'Tracker', helper: 'Team helper', parent: 'Parent', player: 'Player', fan: 'Fan', viewer: 'Viewer', sesscoach: 'Session coach' };
+const ROLE_LABEL = { owner: 'App owner', admin: 'Club admin', coach: 'Head coach', tracker: 'Tracker', helper: 'Assistant coach', parent: 'Parent', player: 'Player', fan: 'Fan', viewer: 'Viewer', sesscoach: 'Session coach' };
 
 /* Whoever looks after the app itself. Read from the database root, never from
    this file — a personal email committed to a public repo gets scraped, sticks
@@ -2371,7 +2371,7 @@ async function takeSeat(put, base, v, who, at) {
     return k;
   }
 }
-const INVITE_ROLES = { coach: 'Coach', tracker: 'Tracker', helper: 'Team helper', parent: 'Parent', viewer: 'Club viewer', sesscoach: 'Session coach', admin: 'Club admin' };
+const INVITE_ROLES = { coach: 'Head coach', tracker: 'Tracker', helper: 'Assistant coach', parent: 'Parent', viewer: 'Club viewer', sesscoach: 'Session coach', admin: 'Club admin' };
 // where each staff role is named on a team: access/teams/{tid}/{key}/{uid}
 const STAFF_KEY = { coach: 'coaches', tracker: 'trackers', helper: 'helpers' };
 // a role for the whole club, with no team to pick
@@ -2925,7 +2925,7 @@ function invitesCard() {
   };
   return `<div class="card"><div class="spread"><h2 style="margin:0">Invites</h2>
       <button class="btn sm" data-act="invitenew">Invite someone</button></div>
-    <p class="muted">A link that makes an account a coach, tracker, team helper or parent on one team, or a club viewer${adminInviteOn() ? ' or admin' : ''}. You choose how many people can use it and for how long. Each can be emailed or copied; tap one to see who used it, or revoke it.</p>
+    <p class="muted">A link that makes an account a head coach, assistant coach, tracker or parent on one team, or a club viewer${adminInviteOn() ? ' or admin' : ''}. You choose how many people can use it and for how long. Each can be emailed or copied; tap one to see who used it, or revoke it.</p>
     ${open.length ? open.map(row).join('') : `<p class="muted" style="margin:0">No open invites.</p>`}
     ${past.length ? `<button class="btn quiet sm" data-act="invitepast" style="margin-top:8px">${ui.invPast ? 'Hide' : 'Show'} used and expired (${past.length})</button>
     ${ui.invPast ? `<div style="margin-top:8px">${past.map(row).join('')}</div>` : ''}` : ''}</div>`;
@@ -3760,7 +3760,7 @@ function talkPartners() {
 // what the list and the thread say under a person she talks to from the sessions
 function talkLabel(u) {
   if (staffUid(u)) return colleagueLabel(u);
-  if (isHelperAny(u)) return 'Team helper';
+  if (isHelperAny(u)) return 'Assistant coach';
   const kids = new Set();
   for (const t of teams()) for (const p of players(t)) if ((p.guardians || {})[u] && p.name) kids.add(p.name);
   for (const c of looseKids()) if ((c.family || {})[u] || (c.guardians || {})[u]) kids.add(kidName(c));
@@ -4435,7 +4435,7 @@ const LOCK_SVG = '<svg class="lock" viewBox="0 0 24 24" width="13" height="13" f
 // a colleague as the list and the thread name her: who, and what she is in the club
 function colleagueLabel(u) {
   const ts = teams().filter(t => (teamAccess(t.id).coaches || {})[u]).map(t => t.name).filter(Boolean);
-  return [isAdmin(u) ? 'Admin' : isCoachAny(u) ? 'Coach' : 'Session coach', ts.join(', ')].filter(Boolean).join(' · ');
+  return [isAdmin(u) ? 'Admin' : isCoachAny(u) ? 'Head coach' : 'Session coach', ts.join(', ')].filter(Boolean).join(' · ');
 }
 function viewInboxMsgs() {
   if (!msgOn() && !wsRead && fbConfig().apiKey) return `<div class="empty"><strong>Connecting…</strong>Messages appear once TeamPlayHQ has reached the club.</div>`;
@@ -7592,8 +7592,8 @@ function roleCardDone(lim) {
 /* One sentence per role, the same on the card and in the account sheet. */
 function roleWords(lim) {
   if (!lim) return '';
-  if (lim === 'tracker') return 'You track this team: you log what happens and run the clock. The subs are the coach\u2019s, and the planned ones her helper\u2019s too.';
-  if (lim === 'helper') return 'You help this team: the calendar, the register, the lineup before kick-off, notices, and the planned subs when they are due. The clock is Track\u2019s; other subs are the coach\u2019s.';
+  if (lim === 'tracker') return 'You track this team: you log what happens and run the clock. The subs are the head coach\u2019s, and the planned ones the assistant coach\u2019s too.';
+  if (lim === 'helper') return 'You help this team: the calendar, the register, the lineup before kick-off, notices, and the planned subs when they are due. The clock is Track\u2019s; other subs are the head coach\u2019s.';
   if (lim === 'parent') return 'You are a parent here: you see your own child by name, say whether your child is coming, and message the coaches.';
   if (lim === 'player') return 'You are signed in as a player: you see your team, and say whether you are coming.';
   if (lim === 'fan') return 'You follow the calendar, the games and the notices. The family answers and talks to the coaches.';
@@ -10355,7 +10355,7 @@ function subsCard(t, m, now) {
     if (!['subs', 'pitch'].includes(ui.gameView)) return '';
     if (planBlocks(m).length) return `<div class="card subscard" id="subsdue" data-k="none"><div class="spread"><h2>Plan not locked in</h2>
           <button class="btn quiet sm" data-act="opengview" data-v="plan">Open the plan</button></div>
-          <p class="muted" style="margin:6px 0 0">Lock in your plan and this card counts down to each change, says when subs are due, and makes them with one tap — here, and on your helper\u2019s Lineup.</p>
+          <p class="muted" style="margin:6px 0 0">Lock in your plan and this card counts down to each change, says when subs are due, and makes them with one tap — here, and on your assistant coach\u2019s Lineup.</p>
           ${canEditTeam(m.teamId) ? `<button class="btn wide" data-act="planlock" style="margin-top:10px">Lock in the plan</button>` : ''}</div>`;
     return `<div class="card subscard" id="subsdue" data-k="none"><div class="spread"><h2>Planned subs</h2>
           <button class="btn quiet sm" data-act="opengview" data-v="plan">Open Lineup</button></div>
@@ -10466,7 +10466,7 @@ function viewPlan() {
       lockCard = `<div class="lockbar" data-state="${sv}">
         <div class="spread"><b>${sv === 'refused' ? '!' : '✓'} Plan locked in</b><span class="lockwhen">${esc(at)}${l.byName ? ' · ' + esc(l.byName) : ''}</span></div>
         <p class="lockmsg">${msg}</p>
-        <p class="lockmsg">Subs, and your helper\u2019s Lineup, count down to each change with one button to make it.</p>
+        <p class="lockmsg">Subs, and your assistant coach\u2019s Lineup, count down to each change with one button to make it.</p>
         <div class="row"><button class="btn sm" data-act="benchall">Bench sheet</button>
           <button class="btn quiet sm" data-act="planunlock">Unlock to change</button></div></div>`;
     } else {
@@ -10477,7 +10477,7 @@ function viewPlan() {
          leads the screen and the snapshot offers no way onto the pitch before
          kick-off. */
       lockCard = `<div class="card lockask" data-state="open"><h2>Lock in your plan</h2>
-        <p style="margin:6px 0 0">${el <= 0 ? 'At kick-off, Subs puts the starters on with one tap and then counts down to each change.' : 'Subs counts down to each change and makes it with one tap.'} Nothing changes by accident, and Subs and your helper\u2019s Lineup count down to each change.</p>
+        <p style="margin:6px 0 0">${el <= 0 ? 'At kick-off, Subs puts the starters on with one tap and then counts down to each change.' : 'Subs counts down to each change and makes it with one tap.'} Nothing changes by accident, and Subs and your assistant coach\u2019s Lineup count down to each change.</p>
         <button class="btn wide" data-act="planlock" style="margin-top:12px">Lock in</button>
         <p class="muted" style="margin:8px 0 0">You can unlock it to change anything, right up to kick-off and after.</p></div>`;
     }
@@ -15175,7 +15175,7 @@ function sheetTplList(shelf) {
     <div class="chips" style="margin-bottom:10px">${Object.entries(TPL_SHELVES).map(([k, l]) => `<button class="chip" type="button" data-act="tpllist" data-k="${k}" aria-pressed="${k === shelf}">${l}</button>`).join('')}</div>
     ${tplNote(shelf)}
     ${list.length ? `<div class="plist">${list.map(t => tplRow(t, 'tplopen')).join('')}</div>`
-      : `<div class="empty"><strong>None yet</strong>${shelf === 'mineTpl' ? "Open a practice's plan and tap Save as a template. Yours follow you to any club, and nobody else sees them." : "A coach saves one straight to the club, or shares one of her own. Coaches, team helpers and admins see them; trackers and parents never do."}</div>`}
+      : `<div class="empty"><strong>None yet</strong>${shelf === 'mineTpl' ? "Open a practice's plan and tap Save as a template. Yours follow you to any club, and nobody else sees them." : "A coach saves one straight to the club, or shares one of her own. Coaches, assistant coaches and admins see them; trackers and parents never do."}</div>`}
     <button class="btn quiet wide" data-act="closesheet" style="margin-top:10px">Done</button>`, true);
 }
 function sheetTpl(t) {
@@ -21844,15 +21844,15 @@ function sheetPersonRoles(uid) {
       : `<p class="muted" style="margin-top:0">${isAdmin(uid) ? 'Nothing else.' : 'None yet — waiting to be let in. Until they have a role they see nothing of the club.'}</p>`}
 
     ${scope.length ? `<p class="lbl" style="margin-top:14px">${held.length || isAdmin(uid) ? 'Give a role' : 'Let them in as'}</p>
-    <div class="chips" style="margin-bottom:12px">${[['parent', 'Parent'], ['tracker', 'Tracker'], ...(admin ? [['helper', 'Team helper']] : []), ['coach', 'Coach']].map(([k, l]) =>
+    <div class="chips" style="margin-bottom:12px">${[['parent', 'Parent'], ['tracker', 'Tracker'], ...(admin ? [['helper', 'Assistant coach']] : []), ['coach', 'Head coach']].map(([k, l]) =>
         `<button class="chip" type="button" data-act="prpick" data-k="role" data-v="${k}" aria-pressed="${f.role === k}">${l}</button>`).join('')}</div>
     <p class="lbl">Team</p>
     ${pickOne('prpick', 'team', f.team, scope.map(x => [x.id, esc(x.name || 'Team')]), 'No teams yet.')}
     ${f.role === 'parent' && t ? `<p class="lbl">Parent of</p>
     ${pickOne('prpick', 'player', f.player, players.map(p => [p.id, pname(p)]), 'No players on this team.')}` : ''}
     <button class="btn wide" data-act="praddrole" data-uid="${uid}"${already ? ' disabled' : ''}>${already ? 'Already has that role'
-        : `Make ${f.role === 'helper' ? 'team helper' : f.role}${t ? ' on ' + esc(t.name || 'the team') : ''}`}</button>
-    <p class="muted">${{ parent: 'Reads that team, and sees their child under My players. Other children show by shirt number.', tracker: 'Logs goals, shots and set pieces on that team’s games, and makes the coach’s locked-in subs.', helper: 'Helps the coach prepare: the calendar, the register, notices, practice plans, the drills, and a game’s plan before kick-off. Not the squad, the clock or the subs, and no family’s conversations.', coach: 'Runs that team: squad, games, subs and plan.' }[f.role]}</p>` : ''}
+        : `Make ${{ helper: 'assistant coach', coach: 'head coach' }[f.role] || f.role}${t ? ' on ' + esc(t.name || 'the team') : ''}`}</button>
+    <p class="muted">${{ parent: 'Reads that team, and sees their child under My players. Other children show by shirt number.', tracker: 'Logs goals, shots and set pieces on that team’s games, and makes the coach’s locked-in subs.', helper: 'Helps the head coach prepare: the calendar, the register, notices, practice plans, the drills, and a game’s plan before kick-off. Not the squad, the clock or the subs, and no family’s conversations.', coach: 'Runs that team: squad, games, subs and plan.' }[f.role]}</p>` : ''}
     <button class="btn quiet wide" data-act="closesheet" style="margin-top:6px">Done</button>`);
 }
 
@@ -21870,7 +21870,7 @@ function sheetPeople() {
         <span class="muted">${r ? esc(ROLE_LABEL[r]) : 'no role'}</span></div>
       <div class="chips" style="margin-top:8px">
         <button class="chip" type="button" data-act="setrole" data-uid="${u.uid}" data-r="admin" aria-pressed="${isAdmin(u.uid)}">Admin</button>
-        <button class="chip" type="button" data-act="setrole" data-uid="${u.uid}" data-r="coach" aria-pressed="${!isAdmin(u.uid) && isCoach(t && t.id, u.uid)}">Coach</button>
+        <button class="chip" type="button" data-act="setrole" data-uid="${u.uid}" data-r="coach" aria-pressed="${!isAdmin(u.uid) && isCoach(t && t.id, u.uid)}">Head coach</button>
         <button class="chip" type="button" data-act="setrole" data-uid="${u.uid}" data-r="tracker" aria-pressed="${isTracker(t && t.id, u.uid)}">Tracker</button>
         ${r === 'parent' ? '<span class="muted" style="align-self:center">parent via a player</span>' : ''}
       </div></div>`;
@@ -22939,7 +22939,7 @@ function viewComply() {
   const teamsOf = u => Object.entries(acc().teams || {}).filter(([, ta]) => ((ta || {}).coaches || {})[u] || ((ta || {}).helpers || {})[u]).map(([tid]) => (state.teams[tid] || {}).name).filter(Boolean);
   return `<div class="stack">
     <h2>Coach compliance</h2>
-    <p class="muted" style="margin-top:0">What MSYSA asks of every coach, helper and admin, in its order: SafeSport, concussion training, then the background check. The checks are done through GotSport; this is the club's record of them. ${t.length ? esc(t.map(([st, n]) => `${n} ${COMPLY_TALLY[st]}`).join(' · ')) + '.' : 'Everyone is up to date.'} Flagged here and to the person, and nothing else changes.</p>
+    <p class="muted" style="margin-top:0">What MSYSA asks of every head coach, assistant coach and admin, in its order: SafeSport, concussion training, then the background check. The checks are done through GotSport; this is the club's record of them. ${t.length ? esc(t.map(([st, n]) => `${n} ${COMPLY_TALLY[st]}`).join(' · ')) + '.' : 'Everyone is up to date.'} Flagged here and to the person, and nothing else changes.</p>
     <div class="plist">${rows.map(r => `<button class="prow go" type="button" data-act="complyopen" data-uid="${esc(r.uid)}" style="grid-template-columns:1fr auto">
       <span><span class="pname">${esc(r.name)}</span><span class="rowsub">${esc([teamsOf(r.uid).join(', ') || (isAdmin(r.uid) ? 'Admin' : ''), r.flags.map(complyLine).join('; ')].filter(Boolean).join(' · '))}</span></span>
       <span class="tag${r.worst < 3 ? ' wait' : ''}">${r.worst < 3 ? COMPLY_WORDS[r.flags.find(f => COMPLY_RANK[f.st] === r.worst).st] : 'up to date'}</span></button>`).join('') || '<p class="muted">No coaches yet.</p>'}</div>
@@ -24949,12 +24949,12 @@ function onAct(e) {
     if (!msgFor || !d.u || d.u === (me && me.uid) || !(myStaffChat(cid) || myTalk(cid))) { toast(me && d.u && (staffUid(d.u) || talkStaff(me.uid)) ? 'Coaches and admins write to each other here' : 'You can message the coach of a session your child is in, and the coaches of her team'); return; }
     closeSheet(); ui.view = 'thread'; ui.thread = { cid }; render(); return;
   }
-  if (a === 'postnew') { if (!noticeTeams().length) { toast('Only a team\u2019s coaches, helpers and the admins post notices'); return; } sheetPost(ui.postTid || ui.teamId); return; }
+  if (a === 'postnew') { if (!noticeTeams().length) { toast('Only a team\u2019s coaches, assistant coaches and the admins post notices'); return; } sheetPost(ui.postTid || ui.teamId); return; }
   if (a === 'postteam') { const el = $('#postText'); sheetPost(d.v, el ? el.value : '', !!ui.postUrgent); return; }
   if (a === 'posturgent') { const el = $('#postText'); sheetPost(ui.postTid, el ? el.value : '', !ui.postUrgent); return; }
   if (a === 'postsend') {
     const tid = ui.postTid, el = $('#postText'), text = String((el && el.value) || '').trim();
-    if (!msgFor || !postsTo(tid)) { toast('Only this team’s coaches, helpers and the club admins can post to it'); return; }
+    if (!msgFor || !postsTo(tid)) { toast('Only this team’s coaches, assistant coaches and the club admins can post to it'); return; }
     if (!text) { toast('Write something first'); return; }
     const id = queueMsg('board', tid, null, text.slice(0, MSG_MAX), ui.postUrgent ? { urgent: true } : null);
     ui.postUrgent = false; ui.view = 'inbox';

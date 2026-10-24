@@ -30,6 +30,8 @@ secretary already has.
 | What a coach plans for a practice | **plan** (**Plans**) | Practice plan (in a label), session plan |
 | The club's week laid out by field, for admins and coaches (build 163) | **Scheduler** | Planner (a coach already has a practice plan and a game plan), plans, Club schedule |
 | Who runs the club | **Club admin** (**admin** in prose) | Org admin, Club administrator |
+| The role that runs a team (`coach` in the code; the owner, 2026-10-24) | **Head coach** (**coach** in prose, and **coaches** for a team's head and assistant coaches together) | Coach (as the role's label) |
+| The role that helps run a team, the calendar, register and plans but not the day (`helper` in the code) | **Assistant coach** | Team helper, Helper |
 | A coach the club pays for 1-1s and groups who runs no team (DOORS.md; build 181) | **Session coach** | Outside trainer, Trainer, Private coach, Coach of no team (in a label) |
 | The one who can take an admin away | **Club owner** | Owner (alone, the app owner is "the app owner") |
 | The club's one place for settings | **Settings** | Your settings, Club settings, Club admin (the screen), Team set-up |
@@ -74,6 +76,7 @@ which the suite reads separately and allows.
 - `workspace`
 - `permission denied`
 - `Final`
+- `Team helper`
 
 ## Said once, not on every screen
 

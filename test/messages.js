@@ -363,7 +363,7 @@ const NOTE = (A, by, text, extra) => ({ by, byName: CLUB.access.members[by].name
     fbk.deliver('staffdm/CLUB/coach~other', { m: { [w[0].path.split('/').pop()]: w[0].value } });
     fbk.deliver('staffdm/CLUB/adm~coach', null); await A.flush();
     A.click({ act: 'inbox' }); await A.flush();
-    check('listed under Conversations with what she is', /Kim <span class="muted">· Coach · Storm/.test(A.rendered()), true);
+    check('listed under Conversations with what she is', /Kim <span class="muted">· Head coach · Storm/.test(A.rendered()), true);
     // a tracker or a parent is not a colleague: a conversation with either is keyed by the two people, at talk/, and the admins read it (DOORS.md)
     A.click({ act: 'sdopen', u: 'trk' }); await A.flush();
     check('with a tracker it is a people conversation, not a colleagues\' one', A.ui.view + ' ' + A.cidRoot(A.sdId('coach', 'trk')), 'thread talk');
