@@ -2,8 +2,8 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '185';
-const BUILT = '2026-10-14';
+const BUILD = '187';
+const BUILT = '2026-10-25';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
    and nothing else, so writing it is a question only the published rules can
@@ -7960,8 +7960,16 @@ const SESSION_VIEWS = ['sessions', 'shome'];
 const sessOnly = () => !!me && gated() && isSessionCoach(me.uid) && !canAdmin() && !isViewer(me.uid) && !anyPlayers()
   && !teams().some(t => isCoach(t.id, me.uid) || isTracker(t.id, me.uid) || isHelper(t.id, me.uid));
 const hasDoor = d => d === 'teams' ? !sessOnly() : (d === 'sessions' && canSessions());
-const doorOf = (v = ui.view) => SESSION_VIEWS.includes(v) ? 'sessions'
-  : TEAM_VIEWS.includes(v) || ['games', 'formation', 'scheduler', 'club', 'people', 'admin', 'regs', 'tryout', 'comply'].includes(v) ? 'teams' : null;
+/* Registrations are the Sessions door's (the owner, 2026-10-25: a season's
+   children are added by their coach and their families let in by email, and
+   a child is in the club whether she registers or not), and so are the fees
+   and the hours. Fields and permits are both doors': the Scheduler places
+   practices on them as Sessions places sessions, so they open in whichever
+   door she is standing in. People and Club details are the club's own, the
+   same from both. */
+const doorOf = (v = ui.view) => v === 'sessions' && sessSetTab() === 'fields' ? null
+  : SESSION_VIEWS.includes(v) || v === 'regs' ? 'sessions'
+  : TEAM_VIEWS.includes(v) || ['games', 'formation', 'scheduler', 'club', 'tryout', 'comply'].includes(v) ? 'teams' : null;
 /* Where she starts, decided from where her uid appears, as navKind() decides
    Home: a family whose only children are on no team is the person the
    Sessions door is for, and opens in it. Everyone else opens in Teams. */
@@ -8163,7 +8171,8 @@ function tabBar() {
    rows there). */
 function settingsLine() {
   const coachAny = !!me && teams().some(t => isCoach(t.id, me.uid));   // People, on Settings
-  return ['You', team() && restricted() !== 'tracker' && !readerRole(restricted()) ? 'this team' : '', canAdmin() ? 'the club: people, registrations, fields' : coachAny ? 'people' : ''].filter(Boolean).join(', ');
+  // the same line in both doors and on the account sheet; Settings itself draws the club's rows for the door she is in
+  return ['You', team() && restricted() !== 'tracker' && !readerRole(restricted()) ? 'this team' : '', canAdmin() ? 'the club: people, fields, teams and sessions' : coachAny ? 'people' : ''].filter(Boolean).join(', ');
 }
 /* The other door, as a row on More and a button on the title row: the door
    she is not in, with its icon and name, for whoever has both (DOORS.md).
@@ -18857,26 +18866,55 @@ function viewSetup() {
 
   // the team on screen, for whoever could read its set-up on Squad before: never a tracker or a family
   const t = team(), lim = restricted();
-  const teamRows = t && lim !== 'tracker' && !readerRole(lim) ? teamSetUp(t, !canEditTeam(t.id)) : [];
+  // a team's set-up is the season's: not drawn while she is in Sessions
+  const teamRows = t && lim !== 'tracker' && !readerRole(lim) && curDoor() !== 'sessions' ? teamSetUp(t, !canEditTeam(t.id)) : [];
   const team_ = teamRows.length ? setSection(`This team · ${teamLabel(t)}`, teamRows) : '';
 
-  const club = setSection('Club', [
+  /* The club's rows are the door's (the owner, 2026-10-25: Settings was
+     getting too thick to take in). Teams is the season: its teams, games,
+     the Scheduler and who coaches them. Sessions is the business: the 1-1s
+     and groups, what families owe, the coaches' hours and registration,
+     which a season does without (a coach adds her players and lets their
+     families in by email). Fields and permits are both doors', and People,
+     Club details and the bulk import the club's own; the other door's rows
+     are one tap away, at the foot, for whoever has both. */
+  const inSess = curDoor() === 'sessions';
+  const offer = canOffer() && (adm || coachAny || (!!me && coachesSessions(me.uid)));
+  const fieldsRow = setRow('sesstab', 'Fields and permits', fieldList().length ? `${fieldList().length} field${fieldList().length === 1 ? '' : 's'}, their permits and hours` : adm ? 'Where the club trains, and the permits for each' : 'Where the club trains', ' data-k="fields"');
+  const shared = [
     adm ? setRow('goview', 'Club details', 'Name and badge, what parents see, teams, who owns it', ' data-v="admin"') : '',
-    adm || coachAny ? setRow('goview', 'People', adm ? `${members().length} signed in · roles and invites` : 'Who is in the club, roles and invites', ' data-v="people"') : '',
+    adm || coachAny ? setRow('goview', 'People', adm ? `${members().length} signed in · roles and invites` : 'Who is in the club, roles and invites', ' data-v="people"') : ''
+  ];
+  const clubRows = inSess ? [
+    ...shared,
     adm ? setRow('goview', 'Registrations', (k => k ? `${k} program${k === 1 ? '' : 's'}, their links, waivers and who has registered` : 'Programs families register for, with their links and waivers')(programsAll().length), ' data-v="regs"') : '',
-    adm ? setRow('goview', 'Coach compliance', (x => x.length ? esc(x.map(([st, k]) => `${k} ${COMPLY_TALLY[st]}`).join(' · ')) : 'Everyone is up to date')(complyTally(complyRows())), ' data-v="comply"') : '',
+    // the sessions' set-up, off the Sessions screen since build 148 (UX-REVIEW-2.md, 7.3): a coach reads fields, and her own fees and hours
+    offer ? fieldsRow : '',
+    offer ? setRow('sesstab', 'Session fees', adm ? 'What each family owes for 1-1s and groups, and what is paid' : 'What families owe for your sessions, and what is paid', ' data-k="fees"') : '',
+    offer ? setRow('sesstab', 'Coach hours', adm ? 'Sessions run by each coach this month, and pay' : 'Sessions you ran this month, and pay', ' data-k="hours"') : '',
+    adm ? setRow('bulkimport', 'Bulk import', 'Sessions, bookings and fields from a spreadsheet or file') : ''
+  ] : [
+    ...shared,
     adm ? setRow('scheduler', 'Scheduler', 'The week laid out by field, every team\'s practices, find a time, picture day')
       : coachAny ? setRow('scheduler', 'Scheduler', 'Your teams\' practices on the club\'s fields, beside everyone else\'s') : '',
-    // the sessions' set-up, off the Sessions screen since build 148 (UX-REVIEW-2.md, 7.3): a coach reads fields, and her own fees and hours
-    adm || coachAny ? setRow('sesstab', 'Fields and permits', fieldList().length ? `${fieldList().length} field${fieldList().length === 1 ? '' : 's'}, their permits and hours` : adm ? 'Where the club trains, and the permits for each' : 'Where the club trains', ' data-k="fields"') : '',
-    adm || coachAny ? setRow('sesstab', 'Session fees', adm ? 'What each family owes for 1-1s and groups, and what is paid' : 'What families owe for your sessions, and what is paid', ' data-k="fees"') : '',
-    adm || coachAny ? setRow('sesstab', 'Coach hours', adm ? 'Sessions run by each coach this month, and pay' : 'Sessions you ran this month, and pay', ' data-k="hours"') : '',
+    adm || coachAny ? fieldsRow : '',
+    adm ? setRow('goview', 'Coach compliance', (x => x.length ? esc(x.map(([st, k]) => `${k} ${COMPLY_TALLY[st]}`).join(' · ')) : 'Everyone is up to date')(complyTally(complyRows())), ' data-v="comply"') : '',
     adm ? setRow('clubdrills', "Club drills", (k => k ? `${k} drill${k === 1 ? '' : 's'} the club's coaches have shared` : 'What coaches share with the club, to tidy or remove')(shelfItems('club').length)) : '',
     adm ? setRow('tpllist', "Club templates", (k => k ? `${k} session template${k === 1 ? '' : 's'}` : 'Practice plans the club keeps to start from')(tplItems('clubTpl').length), ' data-k="clubTpl"') : '',
-    adm ? setRow('bulkimport', 'Bulk import', 'Rosters, games, practices, fields and sessions from a spreadsheet or file') : '',
+    adm ? setRow('bulkimport', 'Bulk import', 'Rosters, games, practices and fields from a spreadsheet or file') : ''
+  ];
+  // the other door's settings, for whoever has both doors and something there to set
+  const both = hasDoor('teams') && hasDoor('sessions');
+  const other = inSess ? 'teams' : 'sessions';
+  const otherHas = inSess ? adm || coachAny : offer;
+  const otherRow = code && both && otherHas
+    ? setRow('door', `${DOORS[other]} settings`, inSess ? 'Teams, the Scheduler, compliance, the club\'s drills' : (adm ? 'Registrations, ' : '') + 'session fees, coach hours', ` data-d="${other}" data-v="setup"`) : '';
+  const club = setSection(code && both ? `Club · ${DOORS[inSess ? 'sessions' : 'teams']}` : 'Club', [
+    ...clubRows,
     !code && Object.keys(myClubs || {}).length ? setRow('clubswitch', 'Your clubs', 'Open a club you are in') : '',
     !code && canNewClub() ? setRow('newclub', 'Start a new club', 'You become its admin') : '',
-    code ? '' : setInfo('Not in a club on this phone yet', 'Open the invite link a club admin sent you, or start one.')
+    code ? '' : setInfo('Not in a club on this phone yet', 'Open the invite link a club admin sent you, or start one.'),
+    otherRow
   ]);
 
   const crosses = adm ? readiness().filter(x => !x.ok).length : 0;
@@ -25098,7 +25136,9 @@ function onAct(e) {
   if (a === 'door') {
     const to = DOORS[d.d] ? d.d : 'teams';
     if (!hasDoor(to)) { closeSheet(); toast('Sessions are for coaches, admins and families'); render(); return; }
-    ui.door = to; ui.view = to === 'sessions' ? 'shome' : homeView(); ui.thread = null;
+    // from Settings, to the other door's settings: the same screen, the other door's rows
+    const stay = d.v === 'setup' && ui.view === 'setup';
+    ui.door = to; ui.view = stay ? 'setup' : to === 'sessions' ? 'shome' : homeView(); ui.thread = null;
     closeSheet(); render(); toTop(); return;
   }
   if (a === 'tab') {
