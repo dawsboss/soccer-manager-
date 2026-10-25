@@ -107,7 +107,7 @@ console.log('--- locking the plan in ---');
   as('jaz'); A.ui.gameView = 'plan';
   let h = html();
   check('an unlocked plan offers to lock it in', /data-act="planlock"/.test(h), true);
-  check('and says what locking does: Subs and the helper\'s Lineup count down (build 175)', /Subs and your helper\u2019s Lineup count down to each change/.test(h), true);
+  check('and says what locking does: Subs and the assistant coach\'s Lineup count down (build 175)', /Subs and your assistant coach\u2019s Lineup count down to each change/.test(h), true);
 
   A.click({ act: 'planlock' });
   check('locking writes who and when', !!g().plan.locked && g().plan.locked.byName, 'Jaz');

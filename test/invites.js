@@ -269,7 +269,7 @@ const CLUB = {
     check('upgraded to coach on the same team', A.isCoach('t1', 'newbie'), true);
     deepEq('and holds both, so either can be taken away', A.rolesHeld('newbie', A.teams()).map(v => v.r), ['coach', 'parent']);
     for (const tid of ['t2', 't3', 't4']) { A.change({ pick: 'prpick', k: 'team' }, tid); A.click({ act: 'praddrole', uid: 'newbie' }); }
-    check('four teams read as a count, not four tags', /Coach<i>4 teams<\/i>/.test(A.roleTags('newbie', A.teams())), true);
+    check('four teams read as a count, not four tags', /Head coach<i>4 teams<\/i>/.test(A.roleTags('newbie', A.teams())), true);
     A.click({ act: 'prunguard', uid: 'newbie', tid: 't1', pid: 'p1' });
     check('the parent link can be removed there too', A.isGuardian('t1', 'newbie'), false);
   }

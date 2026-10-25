@@ -86,7 +86,7 @@ const ask = (S, uid, v) => S.fire(`mailAsks/CLUB/${uid}/m${++n}`, { at: Date.now
     check('saying what, by shirt number, never a child\'s name', /the parent of #9 on Flight/.test(m.text) && !/Rosa|Ella/.test(m.text), true);
     check('with the link, to the site', m.text.includes('https://club.example/index.html?invite=iA'), true);
     check('and that it works once, for this address', /works once, for this address only, and for 7 days/.test(m.text), true);
-    check('a coach\'s invite says so', /a coach of Flight/.test(S.mails.find(x => x.to === 'c@x.com').text), true);
+    check('a coach\'s invite says so', /a head coach of Flight/.test(S.mails.find(x => x.to === 'c@x.com').text), true);
     check('the answer beside the ask', !!S.at(`mailAsks/CLUB/adm/m${n}/answer/ok`), true);
     const b = await ask(S, 'coach', { op: 'invites', ids: ['iA', 'iP'] });
     deepEq('a coach: only the invite she made herself', [b.sent, b.skipped], [['iP'], { iA: 'notyours' }]);
