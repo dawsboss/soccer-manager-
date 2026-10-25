@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '187';
+const BUILD = '188';
 const BUILT = '2026-10-25';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -13097,10 +13097,10 @@ function teamSetUp(t, ro) {
   const counts = esc(tracked(t).map(e => e.label).join(', ')) || 'Nothing switched on';
   const age = teamUAge(t) != null ? `${uLabel(teamUAge(t))} this season · born ${esc(String(t.birthYear))}` : 'No age group set';
   return [
-    ro ? setInfo('Name and crest', `${age} · ${t.logo ? 'own crest' : 'the club badge'}`) : setRow('editteam', 'Name and crest', `${age} · ${t.logo ? 'own crest' : 'the club badge'}`, ` data-id="${t.id}"`),
-    ro ? setInfo('Shapes', shapes) : setRow('formations', 'Shapes', shapes),
-    ro ? setInfo('What to count', counts) : setRow('trackcfg', 'What to count', counts),
-    setRow('sharesheet', 'Links for families', `Read-only pages showing shirt numbers, never names${t.share ? '' : ' · not set up'}`)
+    ro ? setTileInfo('crest', 'Name and crest', `${age} · ${t.logo ? 'own crest' : 'the club badge'}`) : setTile('editteam', 'crest', 'Name and crest', `${age} · ${t.logo ? 'own crest' : 'the club badge'}`, ` data-id="${t.id}"`),
+    ro ? setTileInfo('shapes', 'Shapes', shapes) : setTile('formations', 'shapes', 'Shapes', shapes),
+    ro ? setTileInfo('count', 'What to count', counts) : setTile('trackcfg', 'count', 'What to count', counts),
+    setTile('sharesheet', 'links', 'Links for families', `Read-only pages showing shirt numbers, never names${t.share ? '' : ' · not set up'}`)
   ];
 }
 
@@ -18839,6 +18839,48 @@ const setSection = (head, rows, after = '') => {
   const xs = rows.filter(Boolean);
   return xs.length || after ? `<h2 class="sechead">${head}</h2>${xs.length ? `<div class="card setcard"><div class="plist">${xs.join('')}</div></div>` : ''}${after}` : '';
 };
+/* Settings as modules (the owner, 2026-10-25: *more modular and not just a
+   list*): each section a heading and a grid of tiles, every tile an icon,
+   a name and the one line that says where things stand, so the screen is
+   read at a glance and the thing she wants is found by its picture. A tile
+   that opens something is a button card with the chevron (.go); one that
+   only says something (a coach reading another team's set-up) is flat. */
+const SI = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const SET_ICON = {
+  club: SI('<path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.2 7.5 9.5 4.3-1.3 7.5-4.9 7.5-9.5V6z"/>'),
+  people: SI('<circle cx="9" cy="8.5" r="3.2"/><path d="M3.5 19.5c.6-3.3 2.8-5 5.5-5s4.9 1.7 5.5 5"/><circle cx="16.8" cy="9.5" r="2.5"/><path d="M15.8 14.6c2.4 0 4.2 1.5 4.7 4.4"/>'),
+  regs: SI('<rect x="5" y="4.5" width="14" height="16" rx="2"/><path d="M9 4.5V3.5h6v1"/><path d="m8.8 12.2 2 2 4.2-4.2"/><path d="M9 17.5h6"/>'),
+  fields: SI('<rect x="3" y="5.5" width="18" height="13" rx="1.5"/><path d="M12 5.5v13"/><circle cx="12" cy="12" r="2.6"/><path d="M3 9.5h2.5v5H3M21 9.5h-2.5v5H21"/>'),
+  fees: SI('<circle cx="12" cy="12" r="8.5"/><path d="M14.8 9.2c-.5-.9-1.6-1.4-2.8-1.4-1.6 0-2.8.8-2.8 2s1.1 1.7 2.8 2.1c1.7.4 2.9 1 2.9 2.2s-1.3 2.1-2.9 2.1c-1.3 0-2.4-.5-2.9-1.5M12 6v1.8M12 16.2V18"/>'),
+  hours: SI('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'),
+  sched: SI('<rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 9.5h17M8 3.5v3M16 3.5v3"/><path d="M7.5 13h3v3h-3zM13.5 13h3"/>'),
+  comply: SI('<path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.2 7.5 9.5 4.3-1.3 7.5-4.9 7.5-9.5V6z"/><path d="m8.8 12 2.2 2.2 4.4-4.4"/>'),
+  drills: SI('<path d="M9.5 4h5l3 15.5h-11z"/><path d="M8.2 11h7.6M7.3 15.5h9.4M4 19.5h16"/>'),
+  tpl: SI('<path d="m12 4 8.5 4.5L12 13 3.5 8.5z"/><path d="m3.5 12.5 8.5 4.5 8.5-4.5"/><path d="m3.5 16.5 8.5 4.5 8.5-4.5"/>'),
+  import: SI('<path d="M12 15V4M7.5 8.5 12 4l4.5 4.5"/><path d="M4.5 14.5v4a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-4"/>'),
+  backup: SI('<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5"/><path d="M4.5 14.5v4a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-4"/>'),
+  ready: SI('<circle cx="12" cy="12" r="8.5"/><path d="m8.5 12.2 2.4 2.4 4.8-4.8"/>'),
+  db: SI('<ellipse cx="12" cy="6" rx="7.5" ry="2.8"/><path d="M4.5 6v12c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8V6M4.5 12c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8"/>'),
+  test: SI('<path d="M9.5 3.5h5M10.5 3.5v6L5 19a1.3 1.3 0 0 0 1.1 2h11.8a1.3 1.3 0 0 0 1.1-2l-5.5-9.5v-6"/><path d="M7.5 15h9"/>'),
+  peek: SI('<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>'),
+  about: SI('<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5M12 7.8v.2"/>'),
+  crest: SI('<path d="M8.5 3.5 4 6l1.5 4.5L7.5 10v10.5h9V10l2 .5L20 6l-4.5-2.5c-.5 1.6-1.9 2.5-3.5 2.5s-3-.9-3.5-2.5z"/>'),
+  shapes: SI('<circle cx="12" cy="5.5" r="1.8"/><circle cx="6" cy="11" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="18" cy="11" r="1.8"/><circle cx="8.5" cy="18" r="1.8"/><circle cx="15.5" cy="18" r="1.8"/>'),
+  count: SI('<path d="M5 19.5V11M10 19.5V5M15 19.5v-6M20 19.5V8"/>'),
+  links: SI('<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>'),
+  clubs: SI('<path d="M4 8h13.5M14 4.5 17.5 8 14 11.5"/><path d="M20 16H6.5M10 12.5 6.5 16l3.5 3.5"/>'),
+  plus: SI('<circle cx="12" cy="12" r="8.5"/><path d="M12 8v8M8 12h8"/>'),
+  mydrills: SI('<path d="M5.5 4.5h10l3 3v12h-13z"/><path d="M15.5 4.5v3h3"/><path d="M8.5 12h7M8.5 15.5h5"/>')
+};
+const setTile = (act, ic, title, sub, data = '') => `<button class="card go settile" type="button" data-act="${act}"${data}>
+  <span class="seticon">${SET_ICON[ic] || ''}</span><span class="settxt"><b>${title}</b>${sub ? `<span class="setsub">${sub}</span>` : ''}</span></button>`;
+const setTileInfo = (ic, title, sub) => `<div class="card settile still"><span class="seticon">${SET_ICON[ic] || ''}</span>
+  <span class="settxt"><b>${title}</b>${sub ? `<span class="setsub">${sub}</span>` : ''}</span></div>`;
+// a section: its heading, a line saying what it is for, and its tiles
+const setGroup = (head, sub, tiles, cls = '') => {
+  const xs = tiles.filter(Boolean);
+  return xs.length ? `<section class="setgroup${cls ? ' ' + cls : ''}"><h2 class="sechead">${head}</h2>${sub ? `<p class="secsub">${sub}</p>` : ''}<div class="setgrid">${xs.join('')}</div></section>` : '';
+};
 
 function viewSetup() {
   const code = wsCode();
@@ -18856,19 +18898,27 @@ function viewSetup() {
     ${adm ? `<button class="btn quiet wide" data-act="adoptlocal">Add them to the club</button>`
       : '<p class="muted" style="margin-bottom:0">A club admin can add them to the club, signed in on this phone.</p>'}</div>` : '';
 
-  const you = setSection('You', [
-    me ? setRow('signinsheet', esc(me.name || me.email || 'You'), esc([me.email, r ? ROLE_LABEL[r] + (r !== 'owner' && r !== 'admin' && team() ? ' · ' + team().name : '') : 'No role here yet'].filter(Boolean).join(' · ')))
-      : setRow('signinsheet', 'Sign in', 'Signed out, everything stays on this device. Sign in to share it with your club.'),
-    canTrain() ? setRow('mydrills', 'My drills', 'Your own drills and templates, on every phone you sign in on') : ''
-  ]);
+  /* Who she is, as a card of its own at the top: her picture or initials,
+     her name, and her role in this club. A tap opens the account sheet. */
+  // her role on the team open, or else on a team she has one on: "No role here yet" told a coach looking at another team she had none
+  const elseT = !r && me ? teams().find(x => roleIn(x.id, me.uid)) : null;
+  const roleLine = r ? ROLE_LABEL[r] + (r !== 'owner' && r !== 'admin' && team() ? ' · ' + team().name : '')
+    : elseT ? ROLE_LABEL[roleIn(elseT.id, me.uid)] + ' · ' + elseT.name : 'No role here yet';
+  const hero = me ? `<button class="card go sethero" type="button" data-act="signinsheet">
+      ${me.photo ? `<img class="setavatar" src="${esc(me.photo)}" alt="" referrerpolicy="no-referrer">` : `<span class="setavatar">${esc(initials(me.name || me.email))}</span>`}
+      <span class="settxt"><b>${esc(me.name || me.email || 'You')}</b>${me.email ? `<span class="setsub">${esc(me.email)}</span>` : ''}<span class="setsub">${esc(roleLine)}</span>${code ? `<span class="setsub">${esc(clubName())}</span>` : ''}</span></button>`
+    : `<button class="card go sethero" type="button" data-act="signinsheet"><span class="setavatar">?</span>
+      <span class="settxt"><b>Sign in</b><span class="setsub">Signed out, everything stays on this device. Sign in to share it with your club.</span></span></button>`;
+  const you = `<section class="setgroup"><h2 class="sechead">You</h2>${hero}${canTrain() ? `<button class="card go setswitch quiet" type="button" data-act="mydrills"><span class="seticon">${SET_ICON.mydrills}</span>
+      <span class="settxt"><b>My drills</b><span class="setsub">Your own drills and templates, on every phone you sign in on</span></span></button>` : ''}</section>`;
   // the switches, here and nowhere else (UX-REVIEW-2.md, 6.2); What's new has a gear to them
-  const notify = me ? `<h2 class="sechead" id="setNotify">Notifications</h2>${notifyCards()}` : '';
+  const notify = me ? `<section class="setgroup"><h2 class="sechead" id="setNotify">Notifications</h2><p class="secsub">What reaches this phone, and what waits for you to look</p>${notifyCards()}</section>` : '';
 
   // the team on screen, for whoever could read its set-up on Squad before: never a tracker or a family
   const t = team(), lim = restricted();
   // a team's set-up is the season's: not drawn while she is in Sessions
   const teamRows = t && lim !== 'tracker' && !readerRole(lim) && curDoor() !== 'sessions' ? teamSetUp(t, !canEditTeam(t.id)) : [];
-  const team_ = teamRows.length ? setSection(`This team · ${teamLabel(t)}`, teamRows) : '';
+  const team_ = teamRows.length ? setGroup(`This team · ${teamLabel(t)}`, canEditTeam(t.id) ? 'How the team looks, plays and is tracked' : 'Read only: its coaches change it', teamRows) : '';
 
   /* The club's rows are the door's (the owner, 2026-10-25: Settings was
      getting too thick to take in). Teams is the season: its teams, games,
@@ -18876,64 +18926,64 @@ function viewSetup() {
      and groups, what families owe, the coaches' hours and registration,
      which a season does without (a coach adds her players and lets their
      families in by email). Fields and permits are both doors', and People,
-     Club details and the bulk import the club's own; the other door's rows
-     are one tap away, at the foot, for whoever has both. */
+     Club details and the bulk import the club's own; the other door's are
+     one tap away, at the foot, for whoever has both. */
   const inSess = curDoor() === 'sessions';
   const offer = canOffer() && (adm || coachAny || (!!me && coachesSessions(me.uid)));
-  const fieldsRow = setRow('sesstab', 'Fields and permits', fieldList().length ? `${fieldList().length} field${fieldList().length === 1 ? '' : 's'}, their permits and hours` : adm ? 'Where the club trains, and the permits for each' : 'Where the club trains', ' data-k="fields"');
+  const fieldsTile = setTile('sesstab', 'fields', 'Fields and permits', fieldList().length ? `${fieldList().length} field${fieldList().length === 1 ? '' : 's'}, their permits and hours` : adm ? 'Where the club trains, and the permits for each' : 'Where the club trains', ' data-k="fields"');
   const shared = [
-    adm ? setRow('goview', 'Club details', 'Name and badge, what parents see, teams, who owns it', ' data-v="admin"') : '',
-    adm || coachAny ? setRow('goview', 'People', adm ? `${members().length} signed in · roles and invites` : 'Who is in the club, roles and invites', ' data-v="people"') : ''
+    adm ? setTile('goview', 'club', 'Club details', 'Name and badge, what parents see, teams, who owns it', ' data-v="admin"') : '',
+    adm || coachAny ? setTile('goview', 'people', 'People', adm ? `${members().length} signed in · roles and invites` : 'Who is in the club, roles and invites', ' data-v="people"') : ''
   ];
-  const clubRows = inSess ? [
+  const clubTiles = inSess ? [
     ...shared,
-    adm ? setRow('goview', 'Registrations', (k => k ? `${k} program${k === 1 ? '' : 's'}, their links, waivers and who has registered` : 'Programs families register for, with their links and waivers')(programsAll().length), ' data-v="regs"') : '',
+    adm ? setTile('goview', 'regs', 'Registrations', (k => k ? `${k} program${k === 1 ? '' : 's'}, their links, waivers and who has registered` : 'Programs families register for, with their links and waivers')(programsAll().length), ' data-v="regs"') : '',
     // the sessions' set-up, off the Sessions screen since build 148 (UX-REVIEW-2.md, 7.3): a coach reads fields, and her own fees and hours
-    offer ? fieldsRow : '',
-    offer ? setRow('sesstab', 'Session fees', adm ? 'What each family owes for 1-1s and groups, and what is paid' : 'What families owe for your sessions, and what is paid', ' data-k="fees"') : '',
-    offer ? setRow('sesstab', 'Coach hours', adm ? 'Sessions run by each coach this month, and pay' : 'Sessions you ran this month, and pay', ' data-k="hours"') : '',
-    adm ? setRow('bulkimport', 'Bulk import', 'Sessions, bookings and fields from a spreadsheet or file') : ''
+    offer ? fieldsTile : '',
+    offer ? setTile('sesstab', 'fees', 'Session fees', adm ? 'What each family owes for 1-1s and groups, and what is paid' : 'What families owe for your sessions, and what is paid', ' data-k="fees"') : '',
+    offer ? setTile('sesstab', 'hours', 'Coach hours', adm ? 'Sessions run by each coach this month, and pay' : 'Sessions you ran this month, and pay', ' data-k="hours"') : '',
+    adm ? setTile('bulkimport', 'import', 'Bulk import', 'Sessions, bookings and fields from a spreadsheet or file') : ''
   ] : [
     ...shared,
-    adm ? setRow('scheduler', 'Scheduler', 'The week laid out by field, every team\'s practices, find a time, picture day')
-      : coachAny ? setRow('scheduler', 'Scheduler', 'Your teams\' practices on the club\'s fields, beside everyone else\'s') : '',
-    adm || coachAny ? fieldsRow : '',
-    adm ? setRow('goview', 'Coach compliance', (x => x.length ? esc(x.map(([st, k]) => `${k} ${COMPLY_TALLY[st]}`).join(' · ')) : 'Everyone is up to date')(complyTally(complyRows())), ' data-v="comply"') : '',
-    adm ? setRow('clubdrills', "Club drills", (k => k ? `${k} drill${k === 1 ? '' : 's'} the club's coaches have shared` : 'What coaches share with the club, to tidy or remove')(shelfItems('club').length)) : '',
-    adm ? setRow('tpllist', "Club templates", (k => k ? `${k} session template${k === 1 ? '' : 's'}` : 'Practice plans the club keeps to start from')(tplItems('clubTpl').length), ' data-k="clubTpl"') : '',
-    adm ? setRow('bulkimport', 'Bulk import', 'Rosters, games, practices and fields from a spreadsheet or file') : ''
+    adm ? setTile('scheduler', 'sched', 'Scheduler', 'The week laid out by field, every team\'s practices, find a time, picture day')
+      : coachAny ? setTile('scheduler', 'sched', 'Scheduler', 'Your teams\' practices on the club\'s fields, beside everyone else\'s') : '',
+    adm || coachAny ? fieldsTile : '',
+    adm ? setTile('goview', 'comply', 'Coach compliance', (x => x.length ? esc(x.map(([st, k]) => `${k} ${COMPLY_TALLY[st]}`).join(' · ')) : 'Everyone is up to date')(complyTally(complyRows())), ' data-v="comply"') : '',
+    adm ? setTile('clubdrills', 'drills', "Club drills", (k => k ? `${k} drill${k === 1 ? '' : 's'} the club's coaches have shared` : 'What coaches share with the club, to tidy or remove')(shelfItems('club').length)) : '',
+    adm ? setTile('tpllist', 'tpl', "Club templates", (k => k ? `${k} session template${k === 1 ? '' : 's'}` : 'Practice plans the club keeps to start from')(tplItems('clubTpl').length), ' data-k="clubTpl"') : '',
+    adm ? setTile('bulkimport', 'import', 'Bulk import', 'Rosters, games, practices and fields from a spreadsheet or file') : ''
   ];
-  // the other door's settings, for whoever has both doors and something there to set
+  // the other door's settings, for whoever has both doors and something there to set: a wide card of its own, in the door's icon
   const both = hasDoor('teams') && hasDoor('sessions');
   const other = inSess ? 'teams' : 'sessions';
   const otherHas = inSess ? adm || coachAny : offer;
-  const otherRow = code && both && otherHas
-    ? setRow('door', `${DOORS[other]} settings`, inSess ? 'Teams, the Scheduler, compliance, the club\'s drills' : (adm ? 'Registrations, ' : '') + 'session fees, coach hours', ` data-d="${other}" data-v="setup"`) : '';
-  const club = setSection(code && both ? `Club · ${DOORS[inSess ? 'sessions' : 'teams']}` : 'Club', [
-    ...clubRows,
-    !code && Object.keys(myClubs || {}).length ? setRow('clubswitch', 'Your clubs', 'Open a club you are in') : '',
-    !code && canNewClub() ? setRow('newclub', 'Start a new club', 'You become its admin') : '',
-    code ? '' : setInfo('Not in a club on this phone yet', 'Open the invite link a club admin sent you, or start one.'),
-    otherRow
-  ]);
+  const otherCard = code && both && otherHas
+    ? `<button class="card go setswitch" type="button" data-act="door" data-d="${other}" data-v="setup"><span class="seticon">${DOOR_ICON[other]}</span>
+      <span class="settxt"><b>${DOORS[other]} settings</b><span class="setsub">${inSess ? 'Teams, the Scheduler, compliance, the club\'s drills' : (adm ? 'Registrations, ' : '') + 'session fees, coach hours'}</span></span></button>` : '';
+  const noClub = code ? [] : [
+    Object.keys(myClubs || {}).length ? setTile('clubswitch', 'clubs', 'Your clubs', 'Open a club you are in') : '',
+    canNewClub() ? setTile('newclub', 'plus', 'Start a new club', 'You become its admin') : '',
+    setTileInfo('club', 'Not in a club on this phone yet', 'Open the invite link a club admin sent you, or start one.')
+  ];
+  const clubSub = !code ? '' : !both ? '' : inSess ? 'The business: 1-1s and groups, registration, fees and hours' : 'The season: teams, games, practices and the fields they use';
+  const club = setGroup(code && both ? `Club · ${DOORS[inSess ? 'sessions' : 'teams']}` : 'Club', clubSub, [...clubTiles, ...noClub]) + otherCard;
 
   const crosses = adm ? readiness().filter(x => !x.ok).length : 0;
   // what nobody needs at a game, and only the people who use it see it
-  const adv = setSection('Advanced', [
-    adm ? setRow('backupsheet', 'Backup', "Download a copy of the club, or load one from a file") : '',
-    adm ? setRow('readysheet', 'Check readiness', crosses ? `${crosses} thing${crosses === 1 ? '' : 's'} to fix` : 'Everything the rules need is in place') : '',
-    isOwner() ? setRow('envsheet', 'Database to use', esc(envName() || 'production')) : '',
-    isOwner() ? setRow('maketestclub', 'Make a test club', 'Invented data, publishing off: safe to take apart. A rules change is rehearsed in another database, not another club.') : '',
-    isOwner() ? setRow('peeklib', "Look at someone's drills", 'For support; nothing is kept') : ''
-  ]);
+  const adv = setGroup('Advanced', '', [
+    adm ? setTile('backupsheet', 'backup', 'Backup', "Download a copy of the club, or load one from a file") : '',
+    adm ? setTile('readysheet', 'ready', 'Check readiness', crosses ? `${crosses} thing${crosses === 1 ? '' : 's'} to fix` : 'Everything the rules need is in place') : '',
+    isOwner() ? setTile('envsheet', 'db', 'Database to use', esc(envName() || 'production')) : '',
+    isOwner() ? setTile('maketestclub', 'test', 'Make a test club', 'Invented data, publishing off: safe to take apart') : '',
+    isOwner() ? setTile('peeklib', 'peek', "Look at someone's drills", 'For support; nothing is kept') : ''
+  ], 'quiet');
   /* The version, the connection and the account id were three rows of a
      developer's Advanced section on every phone, a parent's included
-     (UX-REVIEW-3.md, 18.1). Now one quiet row, and a sheet behind it. */
-  const about = setSection('About', [
-    setRow('aboutsheet', `${APP_NAME} · v${BUILD}`, stale() ? 'An older copy of this page: open it to reload' : 'Version, connection, and your account id for support')
-  ]);
+     (UX-REVIEW-3.md, 18.1). Now one quiet card at the foot, and a sheet behind it. */
+  const about = `<section class="setgroup"><h2 class="sechead">About</h2><button class="card go setswitch quiet" type="button" data-act="aboutsheet"><span class="seticon">${SET_ICON.about}</span>
+    <span class="settxt"><b>${APP_NAME} · v${BUILD}</b><span class="setsub">${stale() ? 'An older copy of this page: open it to reload' : 'Version, connection, and your account id for support'}</span></span></button></section>`;
 
-  return `<div class="stack">${pend}${old}${you}${notify}${team_}${club}${adv}${about}</div>`;
+  return `<div class="stack setstack">${pend}${old}${you}${notify}${team_}${club}${adv}${about}</div>`;
 }
 /* Settings → About, and the badge when nothing is waiting: the version, what
    the badge says and why, and the account id. The connection reads `online`,

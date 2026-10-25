@@ -35,7 +35,7 @@
   --over:#B8452F;
   --bench:#7A8B94;
   --focus:#0E5FA8;
-  --r:10px;
+  --r:12px;
   --pad:14px;
 }
 
@@ -115,7 +115,10 @@ h2{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:22px;marg
 .card{background:var(--card);border:0;border-radius:var(--r);padding:var(--pad)}
 .card+.card{margin-top:0}
 /* a card a tap opens: bordered, pressed green, chevroned (every one carries .go, test/visual.js) */
-button.card{border:1px solid var(--line);width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer}
+button.card{border:1px solid var(--line);width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer;
+  box-shadow:0 1px 2px rgba(22,36,44,.06);transition:background-color .12s,box-shadow .12s,transform .06s}
+@media (hover:hover){button.card:hover{box-shadow:0 3px 10px rgba(22,36,44,.10)}}
+button.card:active{transform:translateY(1px)}
 button.card:active,button.prow:active,.sheet .opt:active,.calleaf:active{background:var(--field-wash)}
 /* The chevron on a row or card that opens something, drawn in the padding so a grid row needs no
    column for it; Settings' rows had one of their own (build 143), now this. */
@@ -127,7 +130,7 @@ button.card:active,button.prow:active,.sheet .opt:active,.calleaf:active{backgro
 
 .btn{
   border:1px solid var(--field-deep);background:var(--field-deep);color:#fff;
-  border-radius:8px;padding:11px 16px;font-weight:600;font-size:15px;
+  border-radius:10px;padding:11px 16px;font-weight:600;font-size:15px;
 }
 .btn:active{transform:translateY(1px)}
 .btn.quiet{background:#fff;color:var(--ink);border-color:var(--line)}
@@ -226,7 +229,7 @@ label.field span{display:block;font-size:14px;color:var(--ink-soft);margin-botto
 .plist{display:flex;flex-direction:column;gap:6px}
 .prow{
   display:grid;grid-template-columns:34px 1fr auto;align-items:center;gap:10px;
-  background:#fff;border:1px solid var(--line);border-radius:9px;
+  background:#fff;border:1px solid var(--line);border-radius:10px;
   padding:9px 11px;width:100%;text-align:left;
 }
 .prow[data-on="1"]{border-left:4px solid var(--field);padding-left:8px}
@@ -1345,8 +1348,39 @@ button.ev:active{filter:brightness(.92)}
 .sheet h3.evhead{display:flex;align-items:center;gap:10px}
 .evhead i{flex:none;width:14px;height:14px;border-radius:4px;background:var(--ev)}
 
-/* Settings: four sections, one line per item, tap in (build 143) */
+/* Settings: four sections, one line per item, tap in (build 143); since build 188
+   each section a grid of tiles, an icon, a name and where things stand
+   (the owner, 2026-10-25: *more modular and not just a list*). */
 .sechead{margin:10px 0 -4px}
+.setstack{gap:22px}
+.setgroup{display:flex;flex-direction:column;gap:10px}
+.setgroup .sechead{margin:0;font-size:20px;letter-spacing:.01em}
+.secsub{margin:-6px 0 2px;color:var(--ink-soft);font-size:14px}
+.setgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+@media (min-width:640px){.setgrid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:340px){.setgrid{grid-template-columns:minmax(0,1fr)}}
+.settile{display:flex;flex-direction:column;align-items:flex-start;gap:10px;min-height:128px;padding:14px;border-radius:14px;text-align:left}
+.settile.go{padding-right:14px}
+.settile.go::after{top:24px;right:16px;margin-top:0}
+.settile.still{background:var(--card);opacity:.92}
+.settxt{display:flex;flex-direction:column;gap:3px;min-width:0;width:100%}
+.settxt b{font-size:16px;font-weight:600;line-height:1.25;padding-right:14px}
+.setsub{color:var(--ink-soft);font-size:14px;line-height:1.35;overflow-wrap:anywhere;
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.seticon{flex:none;display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:var(--field-wash);color:var(--field-deep)}
+.seticon svg{width:22px;height:22px}
+.setgroup.quiet .seticon,.setswitch.quiet .seticon,.settile.still .seticon{background:var(--paper);color:var(--ink-soft)}
+/* who she is, at the top: her picture or initials, her name, her role */
+.sethero{display:flex;align-items:center;gap:14px;padding:16px;border-radius:14px}
+.sethero .settxt b{font-family:"Barlow Condensed",sans-serif;font-size:22px;font-weight:600}
+.setavatar{flex:none;display:grid;place-items:center;width:56px;height:56px;border-radius:50%;object-fit:cover;
+  background:linear-gradient(135deg,var(--field),var(--field-deep));color:#fff;
+  font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:22px;letter-spacing:.03em}
+/* the other door's settings, and About: one wide card each */
+.setswitch{display:flex;align-items:center;gap:12px;border-radius:14px;padding:14px 14px}
+.setswitch:not(.quiet){background:linear-gradient(0deg,var(--field-wash),var(--field-wash)) padding-box;border-color:var(--field)}
+.setswitch:not(.quiet) .seticon{background:var(--field-deep);color:#fff}
+.setswitch .setsub{-webkit-line-clamp:2}
 .setrow{grid-template-columns:minmax(0,1fr);width:100%;text-align:left}
 .setrow .psub{overflow-wrap:anywhere}
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
