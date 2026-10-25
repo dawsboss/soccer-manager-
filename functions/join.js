@@ -52,7 +52,7 @@ const keys = o => Object.keys(o && typeof o === 'object' ? o : {});
 const STAFF_KEY = { coach: 'coaches', tracker: 'trackers', helper: 'helpers' };
 const TEAM_ROLES = ['coach', 'tracker', 'helper', 'parent', 'player', 'fan'];
 // INVITE_ROLES and ROLE_LABEL from app.js, for the log
-const ROLE_NAME = { coach: 'Coach', tracker: 'Tracker', helper: 'Team helper', parent: 'Parent', admin: 'Club admin', viewer: 'Club viewer', sesscoach: 'Session coach', player: 'Player', fan: 'Fan' };
+const ROLE_NAME = { coach: 'Head coach', tracker: 'Tracker', helper: 'Assistant coach', parent: 'Parent', admin: 'Club admin', viewer: 'Club viewer', sesscoach: 'Session coach', player: 'Player', fan: 'Fan' };
 // the roles for the whole club, with no team to name (an admin, a viewer, and a session coach: DOORS.md)
 const CLUB_ROLES = ['admin', 'viewer', 'sesscoach'];
 const clip = (s, n) => String(s == null ? '' : s).slice(0, n);
