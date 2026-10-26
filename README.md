@@ -4,6 +4,7 @@ A sideline tracker for soccer coaches: multiple teams, rosters, planned vs actua
 
 ## What it does
 
+- **How to.** More → *How to use TeamPlayHQ* (build 192): a short tutorial, picked for what you are in the club. A parent gets *Say whether your child is coming* and *Follow a game*; a coach *Set up your team*, *Get the families in*, *Before kick-off: plan the lineup* and *On the sideline: run the game*; an admin *Run the club*. Each topic is a few numbered steps, and a step that names a screen has a button that opens it. It is also under Settings → You, and the card that says what your role lets you do, the first time you open the club, carries *Show me how*.
 - **Teams and rosters.** Any number of teams, each with its own squad. Players can be marked unavailable for a game without deleting them.
 - **Match clock.** Start, pause, and end each half or quarter. Every segment is stored with a wall-clock timestamp, so two devices watching the same game show the same minute without talking to each other.
 - **Minutes.** Placing a player on the pitch opens a stint; taking her off closes it. Actual minutes are derived from those stints, so the numbers survive a reload, a dead battery, or a second device joining mid-game.

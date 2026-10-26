@@ -39,6 +39,7 @@ const SUITES = [
   ['sesscoach', 'a session coach, a coach of no team: the sessions as a coach, the squads for the names, nothing of a team, the Sessions door alone, named by an admin'],
   ['settings', 'one Settings screen: you, this team, the club and advanced, by role, and nothing in two places'],
   ['copy', 'copy and vocabulary: every screen held to GLOSSARY.md, the role card once, refusals in one sentence, labels not paragraphs'],
+  ['howto', 'How to, the tutorial: topics by role, every step\'s button a real tap that lands, no name or banned word, reached from More, Settings and the role card'],
   ['visual', 'the visual system: type no smaller than its floor, grey text readable, a chevron on what a tap opens, called off in grey, the + clear of the list'],
   ['home', 'a family\'s own Home and Season: Going on the next thing, her child\'s minutes, and landing there'],
   ['same', 'the same app for everyone (UX-REVIEW-2.md, 9): the coach\'s tap sequence walked on every role, one bar, one next-up card, the game\'s screens shared from the right'],
