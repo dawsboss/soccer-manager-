@@ -101,6 +101,16 @@ move*; the switch is built first and stands on its own.
   `+` adds whatever she may add from either door.
 - **Messages**: one screen, both doors, counted on the tab the same way.
 - **The account sheet, Settings → You, Notifications, Clubs, Sign out.**
+  Settings' Club section is not shared (the owner, 2026-10-25: *the settings
+  page for the club is becoming far too thick to digest*): it is the door's.
+  Teams has Club details, People, the Scheduler, Fields and permits, Coach
+  compliance, the club's drills and templates and Bulk import, and This
+  team; Sessions has Club details, People, Registrations, Fields and permits,
+  Session fees, Coach hours and Bulk import. Registration is the Sessions
+  door's: a season's children are added by their coach and their families
+  let in by an emailed invite, and a child is in the club whether she
+  registers or not. A row at the foot opens the other door's settings for
+  whoever has both. Built in build 187.
 - **My players and the children's records**: her children are hers in both
   doors; a child on a team and a child on no team are both on My players.
 - **Alerts, the bell, the badge, the outbox and the banner**: one phone, one

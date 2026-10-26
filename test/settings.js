@@ -13,7 +13,10 @@
    - This team: the team on screen, for whoever could read its set-up (never
      a tracker or a family), changeable only by its coaches, and nowhere else:
      Squad keeps one line to it.
-   - Club: People for coaches and admins, the club's screens for admins alone.
+   - Club: People for coaches and admins, the club's screens for admins alone,
+     and only the door's own (the owner, 2026-10-25): Teams has the
+     Scheduler, compliance and the club's drills; Sessions registrations,
+     session fees and coach hours; fields, People and Club details both.
    - Advanced: backup and Check readiness for admins (and refused in the
      handler for anyone else), and nobody else gets the section.
    - About: one row for everyone, opening a sheet with the version, the
@@ -75,9 +78,16 @@ console.log('--- the sections, by whose they are ---');
   let h = as('boss');
   check('an admin: You, This team, Club, Advanced, About', heads(h), 'You · This team · Club · Advanced · About');
   check('— titled Settings', A.rendered('#titlebar').includes('<span>Settings</span>'), true);
-  const a = acts(h);
-  for (const x of ['signinsheet', 'goview:admin', 'goview:people', 'goview:regs', 'goview:comply', 'scheduler', 'sesstab:fields', 'sesstab:fees', 'sesstab:hours', 'clubdrills', 'tpllist:clubTpl', 'bulkimport', 'backupsheet', 'readysheet', 'aboutsheet', 'editteam:t1', 'formations', 'trackcfg', 'sharesheet'])
+  let a = acts(h);
+  // the Teams door's club rows (the owner, 2026-10-25); the Sessions door's are pinned in test/doors.js
+  for (const x of ['signinsheet', 'goview:admin', 'goview:people', 'goview:comply', 'scheduler', 'sesstab:fields', 'clubdrills', 'tpllist:clubTpl', 'bulkimport', 'backupsheet', 'readysheet', 'aboutsheet', 'editteam:t1', 'formations', 'trackcfg', 'sharesheet'])
     check(`— ${x}`, a.has(x), true);
+  check('— no registrations, session fees or coach hours in Teams', ['goview:regs', 'sesstab:fees', 'sesstab:hours'].some(x => a.has(x)), false);
+  A.ui.door = 'sessions'; A.render(); a = acts(A.rendered());
+  for (const x of ['goview:regs', 'sesstab:fields', 'sesstab:fees', 'sesstab:hours', 'goview:people', 'backupsheet', 'aboutsheet'])
+    check(`— in Sessions: ${x}`, a.has(x), true);
+  check('— in Sessions: no Scheduler, compliance or team set-up', ['scheduler', 'goview:comply', 'formations', 'editteam:t1'].some(x => a.has(x)), false);
+  A.ui.door = 'teams';
   check('— no club calendar here: Club home and the Calendar have it', a.has('schedule'), false);
   check('— the links for families once', (h.match(/data-act="sharesheet"/g) || []).length, 1);
 
@@ -87,7 +97,10 @@ console.log('--- the sections, by whose they are ---');
   check('— her team\'s set-up, to change', ['editteam:t1', 'formations', 'trackcfg'].every(x => acts(h).has(x)), true);
   check('— no backup or readiness', /backupsheet|readysheet/.test(h), false);
   check('— My drills, since she plans', acts(h).has('mydrills'), true);
-  check('— fields, her sessions\' fees and her hours, off the Sessions screen (UX-REVIEW-2.md, 7.3)', ['sesstab:fields', 'sesstab:fees', 'sesstab:hours'].every(x => acts(h).has(x)), true);
+  check('— fields in Teams, for the Scheduler', acts(h).has('sesstab:fields') && !acts(h).has('sesstab:fees'), true);
+  A.ui.door = 'sessions'; A.render();
+  check('— fields, her sessions\' fees and her hours in Sessions (UX-REVIEW-2.md, 7.3)', ['sesstab:fields', 'sesstab:fees', 'sesstab:hours'].every(x => acts(A.rendered()).has(x)), true);
+  A.ui.door = 'teams'; A.render();
 
   h = as('jaz', 'setup', 't2');
   check('a coach on another team: its set-up to read, nothing to change', /This team/.test(h) && /Shapes/.test(h) && !/data-act="(editteam|formations|trackcfg)"/.test(h), true);

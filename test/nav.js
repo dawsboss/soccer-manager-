@@ -450,7 +450,7 @@ console.log('\n--- More, by role ---');
     ['data-v="notes"', 'data-act="door" data-d="sessions"', 'data-v="setup"', 'data-act="signout"'].every(x => m.includes(x)), true);
   check('— and not Club home, which is her Team tab', has(/data-v="club"/, m), false);
   check('— one Settings, never People or Club details beside it (build 143)', /data-v="people"|data-v="admin"/.test(m) + ' ' + (m.match(/data-v="setup"/g) || []).length, 'false 1');
-  check('— which says it has the club in it', /<b>Settings<\/b>[\s\S]*?the club: people, registrations, fields/.test(m), true);
+  check('— which says it has the club in it', /<b>Settings<\/b>[\s\S]*?the club: people, fields, teams and sessions/.test(m), true);
   check('— no My players: she has nobody', has(/data-v="mine"/, m), false);
   as('jaz'); m = more();
   check('a coach: Settings, which names People, and no Club details', has(/data-v="setup"/, m) + ' ' + has(/<b>Settings<\/b>[\s\S]*?people/, m) + ' ' + has(/data-v="admin"/, m), 'true true false');

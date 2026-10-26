@@ -49,7 +49,7 @@ const SNAP = () => {
 
 (async () => {
   const b = await chromium.launch();
-  const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: 'en-US', timezoneId: 'UTC' });
+  const ctx = await b.newContext({ viewport: { width: Number(process.env.SHOOT_W) || 390, height: Number(process.env.SHOOT_H) || 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: 'en-US', timezoneId: 'UTC' });
   // the club's database and Google's auth servers out of reach; the SDK itself and the fonts load
   await ctx.route(/firebaseio\.com|firebasedatabase\.app|googleapis\.com\/(identitytoolkit|securetoken)|cloudfunctions\.net|fcmregistrations/, r => r.abort());
   /* route() never sees a WebSocket, and the database SDK talks over one: when the network let it
@@ -99,6 +99,15 @@ const SNAP = () => {
 
   const TOURS = {
     landing: async () => { await capture('landing', 'what the app opens on'); },
+    // the four screens most people open, one capture each, for a visual pass
+    look: async () => {
+      await tap('[data-act="roleok"]');
+      if (persona === 'jaz') await go('#/team/sbA/season');
+      await tab('home'); await capture('home', 'Home');
+      await tab('calendar'); await capture('calendar', 'the Calendar');
+      if (persona === 'jaz' || persona === 'boss') { await go('#/team/sbA/squad'); await capture('players', 'Players'); }
+      await go('#/club'); await capture('club-home', 'Club home');
+    },
     // the Scheduler (SCHEDULER.md, build 163): the board as an admin or a coach
     scheduler: async () => {
       await tap('[data-act="roleok"]');
@@ -208,6 +217,16 @@ const SNAP = () => {
       await tap('[data-act="opengview"][data-v="pitch"]', 'Pitch'); await capture('pitch', 'the Pitch look');
       if (await tap('#pitch .token', 'a token')) { await capture('pitch-sheet-off', 'the sheet from a token: the mock pitch, her spot a ?'); await closeSheet(); }
       if (await tap('#app .prow[data-on="0"][data-act="taplive"]', 'a bench row')) { await capture('pitch-sheet-on', 'the sheet from the bench: the mock pitch, every token tappable'); await closeSheet(); }
+    },
+    // the game screens a coach works in, one capture each, for a visual pass
+    gamelook: async () => {
+      await tap('[data-act="roleok"]');
+      await tab('game'); await closeSheet();
+      await tap('#subtabs [data-gview="subs"]', 'Subs'); await capture('subs', 'Subs, the list');
+      if (await tap('[data-act="opengview"][data-v="pitch"]', 'Pitch')) await capture('subs-pitch', 'Subs, the pitch');
+      if (await tap('#subtabs [data-gview="plan"]', 'Lineup')) await capture('lineup', 'Lineup');
+      if (await tap('#subtabs [data-gview="stats"]', 'Stats')) await capture('stats', 'Stats');
+      if (await tap('#subtabs [data-gview="track"]', 'Track') && await tap('#app [data-act="trackfull"]', 'Full screen')) await capture('track-full', "Track's full screen");
     },
     staff: async () => {
       await capture('home-first', 'Home as this role');

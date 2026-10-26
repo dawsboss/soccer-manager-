@@ -171,11 +171,15 @@ console.log('\n--- the screen decides the door; the shared screens keep it ---')
 
 console.log('\n--- the shared screens are the same in both doors ---');
 {
-  for (const [v, name] of [['calendar', 'the Calendar'], ['inbox', 'Messages'], ['setup', 'Settings']]) {
+  for (const [v, name] of [['calendar', 'the Calendar'], ['inbox', 'Messages']]) {
     as('jaz', v, 'teams'); const inTeams = page();
     as('jaz', v, 'sessions'); const inSess = page();
     check(`${name} is one screen, drawn the same in both doors`, inTeams === inSess && A.curDoor() === 'sessions', true);
   }
+  // Settings is one screen too, but its club rows are the door's (the owner, 2026-10-25), and You and About are the same
+  as('jaz', 'setup', 'teams'); const setT = page();
+  as('jaz', 'setup', 'sessions'); const setS = page();
+  check('Settings keeps the door she was in, and draws a different club section in each', A.curDoor() + ' ' + (setT !== setS), 'sessions true');
   const noSwitch = h => h.replace(/<button class="tbdoor"[\s\S]*?<\/button>/, '');
   as('mum', 'calendar', 'teams'); const t = title(); as('mum', 'calendar', 'sessions');
   check('— and titled the same, only the switch naming the other door', noSwitch(title()) === noSwitch(t) && /data-d="teams"/.test(title()) && /data-d="sessions"/.test(t), true);
@@ -183,6 +187,32 @@ console.log('\n--- the shared screens are the same in both doors ---');
   as('jaz', 'season'); A.click({ act: 'accountsheet' }); const acT = sheet(); A.closeSheet();
   as('jaz', 'sessions'); A.click({ act: 'accountsheet' }); const acS = sheet(); A.closeSheet();
   check('the account sheet is the same in both doors', acT === acS, true);
+}
+
+console.log('\n--- Settings, by door (the owner, 2026-10-25) ---');
+{
+  const acts = h => new Set([...h.matchAll(/data-act="(\w+)"(?: data-(?:v|k|d)="([^"]*)")?/g)].map(m => m[2] ? m[1] + ':' + m[2] : m[1]));
+  as('boss', 'setup', 'teams'); let a = acts(page());
+  check('an admin in Teams: the season\'s club rows', ['goview:admin', 'goview:people', 'scheduler', 'sesstab:fields', 'goview:comply', 'clubdrills', 'tpllist:clubTpl', 'bulkimport'].every(x => a.has(x)), true);
+  check('— and no registrations, fees or hours', ['goview:regs', 'sesstab:fees', 'sesstab:hours'].some(x => a.has(x)), false);
+  check('— the club section says whose', /<h2 class="sechead">Club · Teams<\/h2>/.test(page()), true);
+  check('— one row to the Sessions settings', a.has('door:sessions') && /Sessions settings/.test(page()), true);
+  A.click({ act: 'door', d: 'sessions', v: 'setup' });
+  a = acts(page());
+  check('— which stays on Settings, now in Sessions', A.ui.view + ' ' + A.curDoor(), 'setup sessions');
+  check('an admin in Sessions: registrations, fields, fees, hours, people, the club', ['goview:admin', 'goview:people', 'goview:regs', 'sesstab:fields', 'sesstab:fees', 'sesstab:hours', 'bulkimport'].every(x => a.has(x)), true);
+  check('— and none of the season\'s: no Scheduler, compliance, club drills or a team\'s set-up', ['scheduler', 'goview:comply', 'clubdrills', 'tpllist:clubTpl', 'formations', 'trackcfg', 'sharesheet'].some(x => a.has(x)) || /This team/.test(page()), false);
+  check('— and a row back to the Teams settings', a.has('door:teams'), true);
+  A.click({ act: 'goview', v: 'regs' });
+  check('Registrations are the Sessions door\'s, and Back goes to its Settings', A.curDoor() + ' ' + A.upView(), 'sessions setup');
+  as('boss', 'setup', 'teams'); A.click({ act: 'sesstab', k: 'fields' });
+  check('Fields from the Teams settings stays in Teams', A.ui.view + ' ' + A.curDoor(), 'sessions teams');
+  as('boss', 'setup', 'sessions'); A.click({ act: 'sesstab', k: 'fields' });
+  check('— and from the Sessions settings stays in Sessions', A.curDoor(), 'sessions');
+  as('trk', 'setup');
+  check('a tracker, with one door: a plain Settings, no switch', /data-act="door"/.test(page()), false);
+  as('mum', 'setup', 'sessions');
+  check('a family in Sessions: nothing of the club to set, no switch row', /Club ·|data-act="door"[^>]*data-v="setup"/.test(page()), false);
 }
 
 console.log('\n--- the switch ---');

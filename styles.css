@@ -35,7 +35,7 @@
   --over:#B8452F;
   --bench:#7A8B94;
   --focus:#0E5FA8;
-  --r:10px;
+  --r:12px;
   --pad:14px;
 }
 
@@ -115,7 +115,10 @@ h2{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:22px;marg
 .card{background:var(--card);border:0;border-radius:var(--r);padding:var(--pad)}
 .card+.card{margin-top:0}
 /* a card a tap opens: bordered, pressed green, chevroned (every one carries .go, test/visual.js) */
-button.card{border:1px solid var(--line);width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer}
+button.card{border:1px solid var(--line);width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer;
+  box-shadow:0 1px 2px rgba(22,36,44,.06);transition:background-color .12s,box-shadow .12s,transform .06s}
+@media (hover:hover){button.card:hover{box-shadow:0 3px 10px rgba(22,36,44,.10)}}
+button.card:active{transform:translateY(1px)}
 button.card:active,button.prow:active,.sheet .opt:active,.calleaf:active{background:var(--field-wash)}
 /* The chevron on a row or card that opens something, drawn in the padding so a grid row needs no
    column for it; Settings' rows had one of their own (build 143), now this. */
@@ -127,7 +130,7 @@ button.card:active,button.prow:active,.sheet .opt:active,.calleaf:active{backgro
 
 .btn{
   border:1px solid var(--field-deep);background:var(--field-deep);color:#fff;
-  border-radius:8px;padding:11px 16px;font-weight:600;font-size:15px;
+  border-radius:10px;padding:11px 16px;font-weight:600;font-size:15px;
 }
 .btn:active{transform:translateY(1px)}
 .btn.quiet{background:#fff;color:var(--ink);border-color:var(--line)}
@@ -226,7 +229,7 @@ label.field span{display:block;font-size:14px;color:var(--ink-soft);margin-botto
 .plist{display:flex;flex-direction:column;gap:6px}
 .prow{
   display:grid;grid-template-columns:34px 1fr auto;align-items:center;gap:10px;
-  background:#fff;border:1px solid var(--line);border-radius:9px;
+  background:#fff;border:1px solid var(--line);border-radius:10px;
   padding:9px 11px;width:100%;text-align:left;
 }
 .prow[data-on="1"]{border-left:4px solid var(--field);padding-left:8px}
@@ -1345,8 +1348,39 @@ button.ev:active{filter:brightness(.92)}
 .sheet h3.evhead{display:flex;align-items:center;gap:10px}
 .evhead i{flex:none;width:14px;height:14px;border-radius:4px;background:var(--ev)}
 
-/* Settings: four sections, one line per item, tap in (build 143) */
+/* Settings: four sections, one line per item, tap in (build 143); since build 188
+   each section a grid of tiles, an icon, a name and where things stand
+   (the owner, 2026-10-25: *more modular and not just a list*). */
 .sechead{margin:10px 0 -4px}
+.setstack{gap:22px}
+.setgroup{display:flex;flex-direction:column;gap:10px}
+.setgroup .sechead{margin:0;font-size:20px;letter-spacing:.01em}
+.secsub{margin:-6px 0 2px;color:var(--ink-soft);font-size:14px}
+.setgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+@media (min-width:640px){.setgrid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:340px){.setgrid{grid-template-columns:minmax(0,1fr)}}
+.settile{display:flex;flex-direction:column;align-items:flex-start;gap:10px;min-height:128px;padding:14px;border-radius:14px;text-align:left}
+.settile.go{padding-right:14px}
+.settile.go::after{top:24px;right:16px;margin-top:0}
+.settile.still{background:var(--card);opacity:.92}
+.settxt{display:flex;flex-direction:column;gap:3px;min-width:0;width:100%}
+.settxt b{font-size:16px;font-weight:600;line-height:1.25;padding-right:14px}
+.setsub{color:var(--ink-soft);font-size:14px;line-height:1.35;overflow-wrap:anywhere;
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.seticon{flex:none;display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:var(--field-wash);color:var(--field-deep)}
+.seticon svg{width:22px;height:22px}
+.setgroup.quiet .seticon,.setswitch.quiet .seticon,.settile.still .seticon{background:var(--paper);color:var(--ink-soft)}
+/* who she is, at the top: her picture or initials, her name, her role */
+.sethero{display:flex;align-items:center;gap:14px;padding:16px;border-radius:14px}
+.sethero .settxt b{font-family:"Barlow Condensed",sans-serif;font-size:22px;font-weight:600}
+.setavatar{flex:none;display:grid;place-items:center;width:56px;height:56px;border-radius:50%;object-fit:cover;
+  background:linear-gradient(135deg,var(--field),var(--field-deep));color:#fff;
+  font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:22px;letter-spacing:.03em}
+/* the other door's settings, and About: one wide card each */
+.setswitch{display:flex;align-items:center;gap:12px;border-radius:14px;padding:14px 14px}
+.setswitch:not(.quiet){background:linear-gradient(0deg,var(--field-wash),var(--field-wash)) padding-box;border-color:var(--field)}
+.setswitch:not(.quiet) .seticon{background:var(--field-deep);color:#fff}
+.setswitch .setsub{-webkit-line-clamp:2}
 .setrow{grid-template-columns:minmax(0,1fr);width:100%;text-align:left}
 .setrow .psub{overflow-wrap:anywhere}
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
@@ -1495,25 +1529,31 @@ label.field .auth-inline span{display:inline}
 /* By value, never by presence: [data-full] alone matched the empty attribute
    render() left behind off Track and hid the bars on every screen (build 174). */
 body[data-full="track"] .topbar,body[data-full="track"] .tabbar{display:none}
-body[data-full="track"] main{padding:6px 8px calc(6px + env(safe-area-inset-bottom));max-width:1100px}
-.fs{display:flex;flex-direction:column;gap:6px;min-height:calc(100vh - 12px - env(safe-area-inset-bottom));min-height:calc(100dvh - 12px - env(safe-area-inset-bottom))}
-.fshead{background:var(--field-deep);color:#fff;border-radius:var(--r);padding:6px 10px 8px}
+/* The sides keep a thumb's width clear of the glass (the owner, 2026-10-26: the
+   buttons were on the edges and the words nearly cut off): 16px at the least,
+   more where the phone says its corners, curve or notch take more. In the
+   browser's own full screen nothing of the browser is left above the page, so
+   the top gets the same care. */
+body[data-full="track"] main{max-width:1100px;
+  padding:max(10px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(10px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+.fs{display:flex;flex-direction:column;gap:8px;min-height:calc(100vh - 20px - env(safe-area-inset-top) - env(safe-area-inset-bottom));min-height:calc(100dvh - 20px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}
+.fshead{background:var(--field-deep);color:#fff;border-radius:var(--r);padding:8px 14px 10px}
 .fsclockrow{display:flex;align-items:center;gap:10px}
 .fsclockrow .clockline{flex:1;min-width:0}
 .fshead .clock{font-size:36px}
 .fsexit{flex:none;background:rgba(255,255,255,.14);color:#fff;border-color:rgba(255,255,255,.5)}
 .fsnote{display:block;margin-top:4px;font-size:14px;color:rgba(255,255,255,.75)}
 .fsclockbtns{display:flex;gap:8px;margin-top:8px}
-.fsclockbtns .btn{flex:1;background:#fff;color:var(--field-deep);border-color:#fff;min-height:40px;padding:6px 8px}
+.fsclockbtns .btn{flex:1;min-width:0;background:#fff;color:var(--field-deep);border-color:#fff;min-height:40px;padding:6px 4px;font-size:14px;line-height:1.15}
 .fsclockbtns .btn.stop{background:rgba(255,255,255,.14);color:#fff;border-color:rgba(255,255,255,.5)}
-.fs .scorecard{padding:8px 10px}
+.fs .scorecard{padding:10px 14px}
 .fs .scorenum{font-size:34px}
 .fs .subscard{padding:10px 12px}
 .fs .fsoffer{display:none}
 .fsoffer .btn{flex:none;white-space:nowrap}
 .fsrows{flex:1;display:grid;grid-template-columns:1fr;grid-auto-rows:minmax(52px,1fr);gap:6px}
-.fsrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) minmax(0,1.3fr);gap:6px;align-items:stretch}
-.fsrow .tallylbl{align-self:center}
+.fsrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr) minmax(0,1.25fr);gap:8px;align-items:stretch}
+.fsrow .tallylbl{align-self:center;overflow-wrap:anywhere;line-height:1.25}
 .fsrow .tallybtn{height:100%;min-height:52px;padding:6px 4px}
 .fsrow .tallybtn span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fsfoot{display:grid;grid-template-columns:1fr;gap:6px}
@@ -1548,3 +1588,132 @@ body[data-full="track"] main{padding:6px 8px calc(6px + env(safe-area-inset-bott
   .fsrow .tallybtn{min-height:44px;padding:3px 4px}
   .fsfoot{gap:4px}
 }
+
+/* ---------- the four screens most people open, prettied (build 189; the owner,
+   2026-10-25: *all the UIs need prettied*). Home, the Calendar, Players and Club
+   home, in the same language as Settings' tiles: a banner for what the screen
+   is about, one card per thing, and a list inside a card as rows with lines
+   between them rather than a box inside a box. Sizes, colours and the
+   tappable-card rules are the visual system's above, unchanged. ---------- */
+
+/* a list inside a card: rows divided by a line, the card itself the box */
+.card > .plist:has(> .prow:not([data-on]):not([data-picked]):not(.pickrow)){gap:0}
+.card > .plist > .prow:not([data-on]):not([data-picked]):not(.pickrow){
+  border:0;border-radius:0;border-top:1px solid var(--line);padding:12px 30px 12px 2px;background:transparent}
+.card > .plist > div.prow:not([data-on]):not([data-picked]):not(.pickrow){padding-right:2px}
+.card > .plist > .prow:not([data-on]):not([data-picked]):not(.pickrow):first-child{border-top:0;padding-top:4px}
+.card > .plist > .prow:not([data-on]):not([data-picked]):not(.pickrow):last-child{padding-bottom:2px}
+.card > .plist > button.prow:active{background:var(--field-wash)}
+.card > .plist > .prow.go::after{right:6px}
+/* a card holding nothing but such a list keeps its padding tight */
+.card.setcard{padding:6px 14px}
+.card.setcard > .plist > .prow:first-child{padding-top:12px}
+.card.setcard > .plist > .prow:last-child{padding-bottom:12px}
+
+/* small buttons as pills: a row of them reads as a set of choices beside the one filled button */
+.btn.sm{border-radius:999px;padding:9px 14px}
+
+/* Home: the next thing, washed in its colour at the top, its kind said as a kicker */
+.calnext{background:linear-gradient(180deg,color-mix(in srgb,var(--ev,var(--field)) 9%,#fff) 0,#fff 72px)}
+.calnext > .muted:first-child{display:block;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  color:color-mix(in srgb,var(--ev,var(--field)) 75%,var(--ink))}
+.calnext .plainbtn b[style*="font-size:19px"]{font-family:"Barlow Condensed",sans-serif;font-size:24px !important;font-weight:600;line-height:1.1}
+.recordcard h2{font-size:28px;letter-spacing:.02em}
+.recordcard .statgrid{background:var(--paper);border-radius:10px;padding:10px 12px}
+.recordcard .statgrid b{font-size:24px}
+.card.go > .muted:first-child{display:block;font-weight:600;letter-spacing:.06em;text-transform:uppercase}
+
+/* Players: the team as a banner, the squad in one card, each number in a shirt-coloured disc */
+.teamhead{background:linear-gradient(135deg,var(--field-deep),var(--field));color:#fff}
+.teamhead .rowsub{color:rgba(255,255,255,.86)}
+.teamhead-name{display:block;font-family:"Barlow Condensed",sans-serif;font-size:26px;font-weight:600;line-height:1.1}
+.teamhead .crest{width:56px;height:56px;border-radius:14px;background:#fff}
+.rosterhead{margin-bottom:6px}
+.rosterhead h2{display:flex;align-items:center;gap:8px}
+.rosterhead .count{font-family:"Barlow",sans-serif;font-size:14px;font-weight:600;background:var(--field-wash);color:var(--field-deep);
+  border-radius:999px;padding:1px 9px}
+.rostercard .prow{grid-template-columns:40px 1fr auto}
+.rostercard .pnum{display:grid;place-items:center;width:36px;height:36px;border-radius:50%;
+  background:var(--field-wash);color:var(--field-deep);font-size:18px}
+.rostercard .prow .crest.sm{width:36px;height:36px;border-radius:50%;object-fit:cover}
+.rostercard .stars{letter-spacing:2px}
+.addplayer h2{font-size:20px}
+
+/* Club home: the club as a banner, the ways in as tiles, then its teams */
+.clubhead{background:linear-gradient(135deg,var(--field-deep),var(--field));color:#fff;border-radius:16px;padding:18px 16px;margin:0}
+.clubhead b{display:block;font-size:28px;line-height:1.1}
+.clubhead .rowsub{color:rgba(255,255,255,.86)}
+.clubhead .crest.lg{margin:0;background:#fff;border-radius:14px;width:60px;height:60px}
+.clubdoors .settile{min-height:112px}
+.teamcard{border-radius:14px;padding:14px 32px 14px 14px}
+.teamcard .crest{width:48px;height:48px;border-radius:12px}
+.teamcard .tc-main b{font-size:18px}
+.teamcard .pill.live{flex:none}
+
+/* the Calendar: entries a little rounder and lifted, the months as headings with a rule */
+.ev{border-radius:11px;padding:9px 12px;box-shadow:0 1px 2px rgba(22,36,44,.12)}
+.ev[data-past="1"],.ev[data-called="1"]{box-shadow:inset 4px 0 0 var(--ev,var(--field))}
+.ev[data-called="1"]{box-shadow:inset 0 0 0 1.5px var(--ev,var(--line))}
+.ev-title{font-size:16px}
+.agmonth{display:flex;align-items:center;gap:10px;font-size:20px;margin:16px 0 6px}
+.agmonth::after{content:"";flex:1;height:1px;background:var(--line)}
+.agday{padding:6px 0}
+.agevs{gap:8px}
+/* her child's card on a family's Home: the shirt number in the same disc as Players */
+.kidhead .crest.blank{border:0;border-radius:50%;background:var(--field-wash);color:var(--field-deep);
+  font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:20px}
+.kidhead b[style*="font-size:18px"]{font-family:"Barlow Condensed",sans-serif;font-size:22px !important;font-weight:600}
+
+/* ---------- the game screens a coach works in: Subs, Lineup and Stats (build 190;
+   the owner, 2026-10-26: *Subs, lineup, and stats all could use the love*). The
+   sideline rules hold: every row keeps its 64px tap, the on-pitch bar stays green
+   and the three furthest behind stay orange; what changes is boxes inside boxes
+   becoming rows inside one card. ---------- */
+
+/* List / Pitch (and Stats / Live feed): one control with two halves, not two big buttons */
+.chips.looks{background:#fff;border:1px solid var(--line);border-radius:999px;padding:3px;gap:3px}
+.looks .chip{border:0;border-radius:999px;background:transparent;font-weight:600}
+.looks .chip[aria-pressed="true"]{background:var(--field-deep);color:#fff}
+
+/* a card's heading with buttons beside it wraps them under it rather than squeezing the heading */
+.card > .spread:has(> h2 + .row){flex-wrap:wrap;row-gap:8px}
+.card > .spread > h2{white-space:nowrap}
+
+/* On the pitch and the bench: one card, a line between players, the green bar inside the row */
+.card > .plist:has(> .liverow){gap:0}
+.card > .plist > .liverow{border-top:1px solid var(--line);align-items:center;gap:10px}
+.card > .plist > .liverow:first-child{border-top:0}
+.card > .plist > .liverow .lrmain{border:0;border-radius:10px;background:transparent;padding:12px 8px 12px 12px}
+.card > .plist > .liverow[data-on="1"] .lrmain{border:0;padding-left:12px;box-shadow:inset 4px 0 0 var(--field)}
+.card > .plist > .liverow .lrmain:active{background:var(--field-wash)}
+.card > .plist > .liverow[data-picked="1"] .lrmain{background:var(--field-wash);box-shadow:inset 4px 0 0 var(--field-deep),0 0 0 2px var(--field-deep)}
+.card > .plist > .liverow[data-staged="1"] .lrmain{border:0;box-shadow:inset 0 0 0 1.5px var(--line);opacity:.6}
+.card > .plist > .liverow .lrspot{align-self:center;width:auto;min-width:72px;min-height:44px;padding:0 12px;border-radius:999px;background:var(--paper);border:0}
+.card > .plist > .liverow .lrspot:active{background:var(--field-wash)}
+.liverow .pnum{display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:var(--paper);color:var(--ink);font-size:20px}
+.liverow[data-on="1"] .pnum{background:var(--field-wash);color:var(--field-deep)}
+
+/* minutes lists (Stats, and Subs' pitch look): a line between players, the green bar for whoever is on */
+.card > .plist:has(> .prow[data-on]){gap:0}
+.card > .plist > .prow[data-on]{border:0;border-radius:0;border-top:1px solid var(--line);padding:11px 4px 11px 10px;background:transparent}
+.card > .plist > .prow[data-on]:first-child{border-top:0}
+.card > .plist > .prow[data-on="1"]{box-shadow:inset 4px 0 0 var(--field);padding-left:14px}
+.card > .plist > button.prow[data-on]:active{background:var(--field-wash)}
+
+/* Lineup's targets: a line between players */
+.tgtrow{border-top:1px solid var(--line);padding:9px 0 !important}
+.tgtrow:first-of-type{border-top:0}
+
+/* Stats: the score as a scoreboard */
+.statshead{background:linear-gradient(135deg,var(--field-deep),var(--field));color:#fff;text-align:center;padding:18px 14px}
+.statshead h2{font-size:28px;line-height:1.15}
+.statshead .muted{color:rgba(255,255,255,.86);margin-top:4px}
+.statgrid .tallylbl{padding:2px 0}
+.card > .plist > .liverow[data-on="1"]{border-left:0;padding-left:0}
+.card > .plist > .liverow .lrmain{border-radius:0}
+.card > .plist > .liverow{border-radius:0}
+
+/* a narrow or short phone: the clock's words on one line, the exit smaller, the tally rows a little shorter so the foot stays on the screen */
+.fshead .clockmeta{white-space:nowrap}
+@media (max-width:380px){.fsexit{padding:8px 12px;font-size:14px}.fshead .clock{font-size:32px}}
+@media (max-height:780px){.fsrows{grid-auto-rows:minmax(44px,1fr)}.fsrow .tallybtn{min-height:44px;padding:4px}.fs .scorenum{font-size:28px}}
