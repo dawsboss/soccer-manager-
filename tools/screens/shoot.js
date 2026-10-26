@@ -218,6 +218,15 @@ const SNAP = () => {
       if (await tap('#pitch .token', 'a token')) { await capture('pitch-sheet-off', 'the sheet from a token: the mock pitch, her spot a ?'); await closeSheet(); }
       if (await tap('#app .prow[data-on="0"][data-act="taplive"]', 'a bench row')) { await capture('pitch-sheet-on', 'the sheet from the bench: the mock pitch, every token tappable'); await closeSheet(); }
     },
+    // the game screens a coach works in, one capture each, for a visual pass
+    gamelook: async () => {
+      await tap('[data-act="roleok"]');
+      await tab('game'); await closeSheet();
+      await tap('#subtabs [data-gview="subs"]', 'Subs'); await capture('subs', 'Subs, the list');
+      if (await tap('[data-act="opengview"][data-v="pitch"]', 'Pitch')) await capture('subs-pitch', 'Subs, the pitch');
+      if (await tap('#subtabs [data-gview="plan"]', 'Lineup')) await capture('lineup', 'Lineup');
+      if (await tap('#subtabs [data-gview="stats"]', 'Stats')) await capture('stats', 'Stats');
+    },
     staff: async () => {
       await capture('home-first', 'Home as this role');
       await tap('[data-act="roleok"]');

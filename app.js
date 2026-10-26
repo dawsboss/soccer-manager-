@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '189';
+const BUILD = '190';
 const BUILT = '2026-10-25';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -9040,7 +9040,7 @@ function viewStats() {
   const roster = squad(t, m);
   const shotsAll = sh.usOn + sh.usOff, shotsThemAll = sh.themOn + sh.themOff;
 
-  const headline = `<div class="card">
+  const headline = `<div class="card statshead">
     <h2>${us} ${before ? 'v' : `${sc.us} — ${sc.them}`} ${them}</h2>
     <div class="muted">${st === 'done' ? 'Full time' : st === 'live' ? 'In progress' : CALLED[m.called] || 'Not started'}${st === 'upcoming' ? '' : ` · <span data-live="clock" data-mid="${m.id}">${mmss(elapsedSec(m, now))}</span> played`}${m.date ? ' · ' + esc(shortDate(m.date)) : ''}</div></div>`;
   /* Before kick-off there is nothing to count, and fourteen rows of "0 min"
@@ -10621,7 +10621,7 @@ function viewPlan() {
     const got = Math.round((secs[p.id] || 0) / 60), d = pd != null ? got - pd : 0;
     const r = rsvpOf(t.id, 'g_' + m.id, p.id);
     const unsure = gameStatus(m) !== 'upcoming' ? '' : r && r.v === 'maybe' ? ' <span class="tag event">maybe</span>' : !r && (m.out || {})[p.id] !== false ? ' <span class="muted">· no answer</span>' : '';
-    return `<div class="spread" style="padding:4px 0"><span>${p.number != null && p.number !== '' ? `<span class="muted">${esc(p.number)}</span> ` : ''}${esc(p.name)}${p.gk ? ' <span class="muted">GK</span>' : ''}${unsure}</span>
+    return `<div class="spread tgtrow" style="padding:4px 0"><span>${p.number != null && p.number !== '' ? `<span class="muted">${esc(p.number)}</span> ` : ''}${esc(p.name)}${p.gk ? ' <span class="muted">GK</span>' : ''}${unsure}</span>
       <span>${blocks.length ? `<b>${got}</b> ` : ''}<span class="muted">${pd != null ? (blocks.length ? `of ${pd}` : `${pd} target`) : blocks.length ? 'min' : 'no target'}</span>${blocks.length && pd != null && d ? `<span class="diff ${d < 0 ? 'owed' : 'over'}">${d < 0 ? -d + ' short' : d + ' over'}</span>` : ''}</span></div>`;
   }).join('') || '<p class="muted" style="margin:0">No players in the squad for this game yet.</p>';
 

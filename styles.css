@@ -1657,3 +1657,52 @@ body[data-full="track"] main{padding:6px 8px calc(6px + env(safe-area-inset-bott
 .kidhead .crest.blank{border:0;border-radius:50%;background:var(--field-wash);color:var(--field-deep);
   font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:20px}
 .kidhead b[style*="font-size:18px"]{font-family:"Barlow Condensed",sans-serif;font-size:22px !important;font-weight:600}
+
+/* ---------- the game screens a coach works in: Subs, Lineup and Stats (build 190;
+   the owner, 2026-10-26: *Subs, lineup, and stats all could use the love*). The
+   sideline rules hold: every row keeps its 64px tap, the on-pitch bar stays green
+   and the three furthest behind stay orange; what changes is boxes inside boxes
+   becoming rows inside one card. ---------- */
+
+/* List / Pitch (and Stats / Live feed): one control with two halves, not two big buttons */
+.chips.looks{background:#fff;border:1px solid var(--line);border-radius:999px;padding:3px;gap:3px}
+.looks .chip{border:0;border-radius:999px;background:transparent;font-weight:600}
+.looks .chip[aria-pressed="true"]{background:var(--field-deep);color:#fff}
+
+/* a card's heading with buttons beside it wraps them under it rather than squeezing the heading */
+.card > .spread:has(> h2 + .row){flex-wrap:wrap;row-gap:8px}
+.card > .spread > h2{white-space:nowrap}
+
+/* On the pitch and the bench: one card, a line between players, the green bar inside the row */
+.card > .plist:has(> .liverow){gap:0}
+.card > .plist > .liverow{border-top:1px solid var(--line);align-items:center;gap:10px}
+.card > .plist > .liverow:first-child{border-top:0}
+.card > .plist > .liverow .lrmain{border:0;border-radius:10px;background:transparent;padding:12px 8px 12px 12px}
+.card > .plist > .liverow[data-on="1"] .lrmain{border:0;padding-left:12px;box-shadow:inset 4px 0 0 var(--field)}
+.card > .plist > .liverow .lrmain:active{background:var(--field-wash)}
+.card > .plist > .liverow[data-picked="1"] .lrmain{background:var(--field-wash);box-shadow:inset 4px 0 0 var(--field-deep),0 0 0 2px var(--field-deep)}
+.card > .plist > .liverow[data-staged="1"] .lrmain{border:0;box-shadow:inset 0 0 0 1.5px var(--line);opacity:.6}
+.card > .plist > .liverow .lrspot{align-self:center;width:auto;min-width:72px;min-height:44px;padding:0 12px;border-radius:999px;background:var(--paper);border:0}
+.card > .plist > .liverow .lrspot:active{background:var(--field-wash)}
+.liverow .pnum{display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:var(--paper);color:var(--ink);font-size:20px}
+.liverow[data-on="1"] .pnum{background:var(--field-wash);color:var(--field-deep)}
+
+/* minutes lists (Stats, and Subs' pitch look): a line between players, the green bar for whoever is on */
+.card > .plist:has(> .prow[data-on]){gap:0}
+.card > .plist > .prow[data-on]{border:0;border-radius:0;border-top:1px solid var(--line);padding:11px 4px 11px 10px;background:transparent}
+.card > .plist > .prow[data-on]:first-child{border-top:0}
+.card > .plist > .prow[data-on="1"]{box-shadow:inset 4px 0 0 var(--field);padding-left:14px}
+.card > .plist > button.prow[data-on]:active{background:var(--field-wash)}
+
+/* Lineup's targets: a line between players */
+.tgtrow{border-top:1px solid var(--line);padding:9px 0 !important}
+.tgtrow:first-of-type{border-top:0}
+
+/* Stats: the score as a scoreboard */
+.statshead{background:linear-gradient(135deg,var(--field-deep),var(--field));color:#fff;text-align:center;padding:18px 14px}
+.statshead h2{font-size:28px;line-height:1.15}
+.statshead .muted{color:rgba(255,255,255,.86);margin-top:4px}
+.statgrid .tallylbl{padding:2px 0}
+.card > .plist > .liverow[data-on="1"]{border-left:0;padding-left:0}
+.card > .plist > .liverow .lrmain{border-radius:0}
+.card > .plist > .liverow{border-radius:0}
