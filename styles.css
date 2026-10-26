@@ -1529,25 +1529,31 @@ label.field .auth-inline span{display:inline}
 /* By value, never by presence: [data-full] alone matched the empty attribute
    render() left behind off Track and hid the bars on every screen (build 174). */
 body[data-full="track"] .topbar,body[data-full="track"] .tabbar{display:none}
-body[data-full="track"] main{padding:6px 8px calc(6px + env(safe-area-inset-bottom));max-width:1100px}
-.fs{display:flex;flex-direction:column;gap:6px;min-height:calc(100vh - 12px - env(safe-area-inset-bottom));min-height:calc(100dvh - 12px - env(safe-area-inset-bottom))}
-.fshead{background:var(--field-deep);color:#fff;border-radius:var(--r);padding:6px 10px 8px}
+/* The sides keep a thumb's width clear of the glass (the owner, 2026-10-26: the
+   buttons were on the edges and the words nearly cut off): 16px at the least,
+   more where the phone says its corners, curve or notch take more. In the
+   browser's own full screen nothing of the browser is left above the page, so
+   the top gets the same care. */
+body[data-full="track"] main{max-width:1100px;
+  padding:max(10px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(10px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+.fs{display:flex;flex-direction:column;gap:8px;min-height:calc(100vh - 20px - env(safe-area-inset-top) - env(safe-area-inset-bottom));min-height:calc(100dvh - 20px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}
+.fshead{background:var(--field-deep);color:#fff;border-radius:var(--r);padding:8px 14px 10px}
 .fsclockrow{display:flex;align-items:center;gap:10px}
 .fsclockrow .clockline{flex:1;min-width:0}
 .fshead .clock{font-size:36px}
 .fsexit{flex:none;background:rgba(255,255,255,.14);color:#fff;border-color:rgba(255,255,255,.5)}
 .fsnote{display:block;margin-top:4px;font-size:14px;color:rgba(255,255,255,.75)}
 .fsclockbtns{display:flex;gap:8px;margin-top:8px}
-.fsclockbtns .btn{flex:1;background:#fff;color:var(--field-deep);border-color:#fff;min-height:40px;padding:6px 8px}
+.fsclockbtns .btn{flex:1;min-width:0;background:#fff;color:var(--field-deep);border-color:#fff;min-height:40px;padding:6px 4px;font-size:14px;line-height:1.15}
 .fsclockbtns .btn.stop{background:rgba(255,255,255,.14);color:#fff;border-color:rgba(255,255,255,.5)}
-.fs .scorecard{padding:8px 10px}
+.fs .scorecard{padding:10px 14px}
 .fs .scorenum{font-size:34px}
 .fs .subscard{padding:10px 12px}
 .fs .fsoffer{display:none}
 .fsoffer .btn{flex:none;white-space:nowrap}
 .fsrows{flex:1;display:grid;grid-template-columns:1fr;grid-auto-rows:minmax(52px,1fr);gap:6px}
-.fsrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) minmax(0,1.3fr);gap:6px;align-items:stretch}
-.fsrow .tallylbl{align-self:center}
+.fsrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr) minmax(0,1.25fr);gap:8px;align-items:stretch}
+.fsrow .tallylbl{align-self:center;overflow-wrap:anywhere;line-height:1.25}
 .fsrow .tallybtn{height:100%;min-height:52px;padding:6px 4px}
 .fsrow .tallybtn span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fsfoot{display:grid;grid-template-columns:1fr;gap:6px}
@@ -1706,3 +1712,8 @@ body[data-full="track"] main{padding:6px 8px calc(6px + env(safe-area-inset-bott
 .card > .plist > .liverow[data-on="1"]{border-left:0;padding-left:0}
 .card > .plist > .liverow .lrmain{border-radius:0}
 .card > .plist > .liverow{border-radius:0}
+
+/* a narrow or short phone: the clock's words on one line, the exit smaller, the tally rows a little shorter so the foot stays on the screen */
+.fshead .clockmeta{white-space:nowrap}
+@media (max-width:380px){.fsexit{padding:8px 12px;font-size:14px}.fshead .clock{font-size:32px}}
+@media (max-height:780px){.fsrows{grid-auto-rows:minmax(44px,1fr)}.fsrow .tallybtn{min-height:44px;padding:4px}.fs .scorenum{font-size:28px}}

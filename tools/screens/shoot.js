@@ -49,7 +49,7 @@ const SNAP = () => {
 
 (async () => {
   const b = await chromium.launch();
-  const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: 'en-US', timezoneId: 'UTC' });
+  const ctx = await b.newContext({ viewport: { width: Number(process.env.SHOOT_W) || 390, height: Number(process.env.SHOOT_H) || 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: 'en-US', timezoneId: 'UTC' });
   // the club's database and Google's auth servers out of reach; the SDK itself and the fonts load
   await ctx.route(/firebaseio\.com|firebasedatabase\.app|googleapis\.com\/(identitytoolkit|securetoken)|cloudfunctions\.net|fcmregistrations/, r => r.abort());
   /* route() never sees a WebSocket, and the database SDK talks over one: when the network let it
@@ -226,6 +226,7 @@ const SNAP = () => {
       if (await tap('[data-act="opengview"][data-v="pitch"]', 'Pitch')) await capture('subs-pitch', 'Subs, the pitch');
       if (await tap('#subtabs [data-gview="plan"]', 'Lineup')) await capture('lineup', 'Lineup');
       if (await tap('#subtabs [data-gview="stats"]', 'Stats')) await capture('stats', 'Stats');
+      if (await tap('#subtabs [data-gview="track"]', 'Track') && await tap('#app [data-act="trackfull"]', 'Full screen')) await capture('track-full', "Track's full screen");
     },
     staff: async () => {
       await capture('home-first', 'Home as this role');
