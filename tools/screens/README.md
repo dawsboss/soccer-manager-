@@ -24,12 +24,19 @@ node shoot.js live.json jaz shots/jaz-subs subs       # the coach subbing: the l
 node gen-club.js quiet quiet.json fields && node shoot.js quiet.json boss shots/boss-sched scheduler   # the Scheduler's board, with fields and permits on the club
 node render-states.js && node shoot-states.js shots/onboarding   # invite, team link, registration, share pages
 python3 index.py                        # INDEX.md: every capture by persona and step
+node clips.js quiet.json clips          # a silent clip per How to topic (build 192): needs ffmpeg; clips/INDEX.md lists them
 ```
 
 `gen-club.js` shapes the club per phone the way `orgs/{code}` is read (a family's phone holds her
 own child's record, the rest of the squad by number, staff names only, no log); change the people
 or the fixtures there. `shoot.js` is the tours: add a step as a tap and a `capture()`; a tap that
 finds nothing for that role is written to the manifest as a `MISS`, which is itself a fact worth
-knowing. `render-states.js` draws the states a signed-out or not-yet-in phone meets through the
+knowing. `clips.js` records the How to topics (build 192): as the parent for every topic she has, then the
+coach, then the admin, it opens each topic, reads the steps off the screen, shows each step's words
+as a caption, rings and taps its button and holds the screen it opened; Chromium records it and
+ffmpeg makes an `.mp4` and a poster per topic. The clips are files to look at, never in the repo and
+never in the app; make them again when the screens change.
+
+`render-states.js` draws the states a signed-out or not-yet-in phone meets through the
 test harness and `shoot-states.js` drops them into the page shell, and serves the share pages
 (`live.html`, `game.html`) the app's own `publicDoc()`/`fixtureDoc()` through a fake SDK.
