@@ -99,6 +99,15 @@ const SNAP = () => {
 
   const TOURS = {
     landing: async () => { await capture('landing', 'what the app opens on'); },
+    // the four screens most people open, one capture each, for a visual pass
+    look: async () => {
+      await tap('[data-act="roleok"]');
+      if (persona === 'jaz') await go('#/team/sbA/season');
+      await tab('home'); await capture('home', 'Home');
+      await tab('calendar'); await capture('calendar', 'the Calendar');
+      if (persona === 'jaz' || persona === 'boss') { await go('#/team/sbA/squad'); await capture('players', 'Players'); }
+      await go('#/club'); await capture('club-home', 'Club home');
+    },
     // the Scheduler (SCHEDULER.md, build 163): the board as an admin or a coach
     scheduler: async () => {
       await tap('[data-act="roleok"]');

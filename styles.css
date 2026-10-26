@@ -1582,3 +1582,78 @@ body[data-full="track"] main{padding:6px 8px calc(6px + env(safe-area-inset-bott
   .fsrow .tallybtn{min-height:44px;padding:3px 4px}
   .fsfoot{gap:4px}
 }
+
+/* ---------- the four screens most people open, prettied (build 189; the owner,
+   2026-10-25: *all the UIs need prettied*). Home, the Calendar, Players and Club
+   home, in the same language as Settings' tiles: a banner for what the screen
+   is about, one card per thing, and a list inside a card as rows with lines
+   between them rather than a box inside a box. Sizes, colours and the
+   tappable-card rules are the visual system's above, unchanged. ---------- */
+
+/* a list inside a card: rows divided by a line, the card itself the box */
+.card > .plist:has(> .prow:not([data-on]):not([data-picked]):not(.pickrow)){gap:0}
+.card > .plist > .prow:not([data-on]):not([data-picked]):not(.pickrow){
+  border:0;border-radius:0;border-top:1px solid var(--line);padding:12px 30px 12px 2px;background:transparent}
+.card > .plist > div.prow:not([data-on]):not([data-picked]):not(.pickrow){padding-right:2px}
+.card > .plist > .prow:not([data-on]):not([data-picked]):not(.pickrow):first-child{border-top:0;padding-top:4px}
+.card > .plist > .prow:not([data-on]):not([data-picked]):not(.pickrow):last-child{padding-bottom:2px}
+.card > .plist > button.prow:active{background:var(--field-wash)}
+.card > .plist > .prow.go::after{right:6px}
+/* a card holding nothing but such a list keeps its padding tight */
+.card.setcard{padding:6px 14px}
+.card.setcard > .plist > .prow:first-child{padding-top:12px}
+.card.setcard > .plist > .prow:last-child{padding-bottom:12px}
+
+/* small buttons as pills: a row of them reads as a set of choices beside the one filled button */
+.btn.sm{border-radius:999px;padding:9px 14px}
+
+/* Home: the next thing, washed in its colour at the top, its kind said as a kicker */
+.calnext{background:linear-gradient(180deg,color-mix(in srgb,var(--ev,var(--field)) 9%,#fff) 0,#fff 72px)}
+.calnext > .muted:first-child{display:block;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  color:color-mix(in srgb,var(--ev,var(--field)) 75%,var(--ink))}
+.calnext .plainbtn b[style*="font-size:19px"]{font-family:"Barlow Condensed",sans-serif;font-size:24px !important;font-weight:600;line-height:1.1}
+.recordcard h2{font-size:28px;letter-spacing:.02em}
+.recordcard .statgrid{background:var(--paper);border-radius:10px;padding:10px 12px}
+.recordcard .statgrid b{font-size:24px}
+.card.go > .muted:first-child{display:block;font-weight:600;letter-spacing:.06em;text-transform:uppercase}
+
+/* Players: the team as a banner, the squad in one card, each number in a shirt-coloured disc */
+.teamhead{background:linear-gradient(135deg,var(--field-deep),var(--field));color:#fff}
+.teamhead .rowsub{color:rgba(255,255,255,.86)}
+.teamhead-name{display:block;font-family:"Barlow Condensed",sans-serif;font-size:26px;font-weight:600;line-height:1.1}
+.teamhead .crest{width:56px;height:56px;border-radius:14px;background:#fff}
+.rosterhead{margin-bottom:6px}
+.rosterhead h2{display:flex;align-items:center;gap:8px}
+.rosterhead .count{font-family:"Barlow",sans-serif;font-size:14px;font-weight:600;background:var(--field-wash);color:var(--field-deep);
+  border-radius:999px;padding:1px 9px}
+.rostercard .prow{grid-template-columns:40px 1fr auto}
+.rostercard .pnum{display:grid;place-items:center;width:36px;height:36px;border-radius:50%;
+  background:var(--field-wash);color:var(--field-deep);font-size:18px}
+.rostercard .prow .crest.sm{width:36px;height:36px;border-radius:50%;object-fit:cover}
+.rostercard .stars{letter-spacing:2px}
+.addplayer h2{font-size:20px}
+
+/* Club home: the club as a banner, the ways in as tiles, then its teams */
+.clubhead{background:linear-gradient(135deg,var(--field-deep),var(--field));color:#fff;border-radius:16px;padding:18px 16px;margin:0}
+.clubhead b{display:block;font-size:28px;line-height:1.1}
+.clubhead .rowsub{color:rgba(255,255,255,.86)}
+.clubhead .crest.lg{margin:0;background:#fff;border-radius:14px;width:60px;height:60px}
+.clubdoors .settile{min-height:112px}
+.teamcard{border-radius:14px;padding:14px 32px 14px 14px}
+.teamcard .crest{width:48px;height:48px;border-radius:12px}
+.teamcard .tc-main b{font-size:18px}
+.teamcard .pill.live{flex:none}
+
+/* the Calendar: entries a little rounder and lifted, the months as headings with a rule */
+.ev{border-radius:11px;padding:9px 12px;box-shadow:0 1px 2px rgba(22,36,44,.12)}
+.ev[data-past="1"],.ev[data-called="1"]{box-shadow:inset 4px 0 0 var(--ev,var(--field))}
+.ev[data-called="1"]{box-shadow:inset 0 0 0 1.5px var(--ev,var(--line))}
+.ev-title{font-size:16px}
+.agmonth{display:flex;align-items:center;gap:10px;font-size:20px;margin:16px 0 6px}
+.agmonth::after{content:"";flex:1;height:1px;background:var(--line)}
+.agday{padding:6px 0}
+.agevs{gap:8px}
+/* her child's card on a family's Home: the shirt number in the same disc as Players */
+.kidhead .crest.blank{border:0;border-radius:50%;background:var(--field-wash);color:var(--field-deep);
+  font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:20px}
+.kidhead b[style*="font-size:18px"]{font-family:"Barlow Condensed",sans-serif;font-size:22px !important;font-weight:600}

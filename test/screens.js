@@ -103,7 +103,7 @@ const club = () => ({
     check('— and counts the teams plain, not "you can reach" (UX-REVIEW-2.md, 7.3)', /you can reach/.test(h), false);
     // the chevron is .go, drawn by the stylesheet (UX-REVIEW.md, 4; test/visual.js holds every door to it)
     check('every card that opens something has a chevron', count(h, /<button class="card /g), count(h, /<button class="card go /g));
-    check('— the Calendar card among them', /<button class="card go tapcard" type="button" data-act="schedule">[\s\S]*?<b>Calendar<\/b>/.test(h), true);
+    check('— the Calendar card among them', /<button class="card go settile" type="button" data-act="schedule">[\s\S]*?<b>Calendar<\/b>/.test(h), true);
     check('— and each team\'s', /<button class="card go teamcard" data-act="goteam" data-id="t1">/.test(h), true);
   }
 

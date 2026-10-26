@@ -88,7 +88,7 @@ const fill = vals => { for (const [k, v] of Object.entries(vals)) A.dom.node('#'
     check('a coach adding to a team that isn\'t hers is refused', A.lastToast(), 'Only that team’s coaches and the club’s admins can add to it');
 
     as('boss'); A.ui.view = 'club'; A.render();
-    check('an admin has the Calendar first on Club home', /data-act="schedule"[^>]*>\s*(<span class="tc-main">)?<b>Calendar<\/b>/.test(A.rendered()), true);
+    check('an admin has the Calendar first on Club home', /data-act="schedule"[^>]*>\s*(<span class="tc-main">|<span class="seticon">[\s\S]*?<\/span><span class="settxt">)?<b>Calendar<\/b>/.test(A.rendered()), true);
     check('saying what is on this week', /Every team · This week: /.test(A.rendered()), true);
     check('and is not offered an empty My calendar ahead of it', /data-v="mycal"/.test(A.rendered()), false);
     // her Home leads with the club's week (the owner, 2026-10-15), this week whatever the calendar was left on

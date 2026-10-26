@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '188';
+const BUILD = '189';
 const BUILT = '2026-10-25';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -8243,11 +8243,15 @@ function viewClub() {
      guess. */
   return `<div class="stack">
     <div class="clubhead">${clubCrest('lg')}<div><b>${esc(org)}</b>
-      <span class="rowsub">${list.length} team${list.length === 1 ? '' : 's'}</span></div></div>
-    ${canAdmin() && list.length ? goCard('schedule', '', 'Calendar', `Every team · ${esc(schedLine())}`) + clubWeekCard(thisClubWeek())
-    : (me || !gated()) && myCalOwn() && !fam ? goCard('goview', ' data-v="mycal"', 'Calendar', esc(myCalLine())) : ''}
-    ${anyPlayers() && !fam ? goCard('goview', ' data-v="mine"', 'My players', allKidNames().map(esc).join(', ')) : ''}
-    ${canSessions() ? goCard('goview', ' data-v="shome"', 'Sessions', esc(sessClubLine())) : ''}
+      <span class="rowsub">${list.length} team${list.length === 1 ? '' : 's'}${list.some(t => teamMatches(t.id).some(x => gameStatus(x) === 'live')) ? ' · a game on now' : ''}</span></div></div>
+    ${(doors => doors.length ? `<div class="setgrid clubdoors">${doors.join('')}</div>` : '')([
+      canAdmin() && list.length ? setTile('schedule', 'sched', 'Calendar', `Every team · ${esc(schedLine())}`)
+        : (me || !gated()) && myCalOwn() && !fam ? setTile('goview', 'sched', 'Calendar', esc(myCalLine()), ' data-v="mycal"') : '',
+      anyPlayers() && !fam ? setTile('goview', 'people', 'My players', allKidNames().map(esc).join(', '), ' data-v="mine"') : '',
+      canSessions() ? setTile('goview', 'drills', 'Sessions', esc(sessClubLine()), ' data-v="shome"') : ''
+    ].filter(Boolean))}
+    ${canAdmin() && list.length ? clubWeekCard(thisClubWeek()) : ''}
+    ${list.length ? `<h2 class="sechead">Teams</h2>` : ''}
     ${complyCards()}
     ${myTryouts().length ? goCard('goview', ' data-v="tryout"', 'Tryouts to score', `${esc(myTryouts().map(p => p.name).join(', '))} · by bib`) : ''}
     ${list.length ? list.map(t => {
@@ -12387,21 +12391,25 @@ function viewRoster() {
     `<div class="empty"><strong>No players yet</strong>${ro ? "The team's coach adds the squad." : 'Add the squad once; every game reuses it.'}</div>`;
   // a tracker logs games for the squad; the team's set-up is the coaches', on Settings since build 143
   const setUp = restricted() === 'tracker' ? '' : `<div class="card setcard"><div class="plist">${setRow('goview', 'Team settings', ro ? 'Shapes, what to count and links for families: read only' : 'Name and crest, shapes, what to count, links for families', ' data-v="setup"')}</div></div>`;
-  return `<div class="stack">
-    <div class="card teamhead"><div class="row">
-      ${teamCrest(t)}
-      <span style="flex:1;min-width:0"><b style="font-size:18px">${teamLabel(t)}</b>
-        <span class="rowsub">${teamStats(t)}</span>
-        <span class="rowsub">${[teamUAge(t) != null ? `${uLabel(teamUAge(t))} this season · born ${esc(String(t.birthYear))}` : 'No age group set', t.logo ? 'Own crest' : 'Using the club badge'].join(' · ')}</span></span>
-</div></div>
-    ${ro ? '' : joinCard(t)}
-    ${ro ? '' : `<div class="card"><div class="row" style="align-items:flex-end">
+  /* The players are what she came for (the owner, 2026-10-25: *all the UIs
+     need prettied*): the team as a banner, then the list in one card, then
+     adding a player and the team link for parents, which are done once. */
+  const addCard = ro ? '' : `<div class="card addplayer"><h2 style="margin-bottom:6px">Add a player</h2><div class="row" style="align-items:flex-end">
       <div style="width:76px"><label class="field"><span>Number</span><input type="number" inputmode="numeric" id="newNum" placeholder="7"></label></div>
       <div style="flex:1"><label class="field"><span>Name</span><input type="text" id="newName" placeholder="Ella Moreno"></label></div>
       <button class="btn" data-act="addplayer" style="margin-bottom:10px">Add</button>
-    </div></div>`}
-    ${list.length ? `<div class="spread"><h2>Players</h2><span class="muted">dots: the coach’s rating${infoBtn('rating')}</span></div>` : ''}
-    <div class="plist">${rows}</div>
+    </div></div>`;
+  return `<div class="stack">
+    <div class="card teamhead"><div class="row">
+      ${teamCrest(t)}
+      <span style="flex:1;min-width:0"><b class="teamhead-name">${teamLabel(t)}</b>
+        <span class="rowsub">${teamStats(t)}</span>
+        <span class="rowsub">${[teamUAge(t) != null ? `${uLabel(teamUAge(t))} this season · born ${esc(String(t.birthYear))}` : 'No age group set', t.logo ? 'Own crest' : 'Using the club badge'].join(' · ')}</span></span>
+</div></div>
+    ${list.length ? `<div class="card rostercard"><div class="spread rosterhead"><h2>Players <span class="count">${list.length}</span></h2><span class="muted">dots: the coach’s rating${infoBtn('rating')}</span></div>
+    <div class="plist">${rows}</div></div>` : `<div class="plist">${rows}</div>`}
+    ${addCard}
+    ${ro ? '' : joinCard(t)}
     ${setUp}</div>`;
 }
 
@@ -12418,7 +12426,7 @@ function seasonGames(t, ms, named = false) {
       <span class="resbadge" data-r="${r}">${r || '·'}</span>
       <span><span class="pname">${esc(m.opponent || 'TBC')}</span>
         <span class="psub">${[shortDate(m.date), m.venue].filter(Boolean).map(esc).join(' · ') || 'no date'}</span></span>
-      <span class="pmins">${CALLED[m.called] && st === 'upcoming' ? `<span class="tag called">${CALLED[m.called]}</span>` : st === 'upcoming' ? '<small>upcoming</small>' : scoreSpan(sc)}</span></button>`;
+      <span class="pmins">${CALLED[m.called] && st === 'upcoming' ? `<span class="tag called">${CALLED[m.called]}</span>` : st === 'upcoming' ? `<small>${m.kickoff ? esc(niceTime(m.kickoff)) : 'to come'}</small>` : scoreSpan(sc)}</span></button>`;
   }).join('')}</div></div>`;
 }
 /* A child's season said once, the way a parent says it (UX-REVIEW.md, 2.3;
@@ -12562,7 +12570,7 @@ function viewSeason() {
 
   const stat = (label, a, b) => `<span class="tallylbl">${label}</span><b>${a}</b><b>${b}</b>`;
 
-  const record = `<div class="card">
+  const record = `<div class="card recordcard">
     <div class="spread"><h2>${w}W ${d}D ${l}L</h2>
       <span class="muted">${done.length} played${ms.length > done.length ? ` · ${ms.length - done.length} to come` : ''}</span></div>
     <div class="statgrid" style="grid-template-columns:1fr 60px 60px;margin-top:10px">
