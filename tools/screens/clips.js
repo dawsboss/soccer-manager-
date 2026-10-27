@@ -73,7 +73,9 @@ const OVERLAY = () => {
     P[scen] = JSON.parse(fs.readFileSync(f, 'utf8'));
   }
   const b = await chromium.launch();
+  const mf = path.join(outDir, 'manifest.json');
   const manifest = { build: BUILD, made: new Date().toISOString(), clips: [] };
+  try { const old = JSON.parse(fs.readFileSync(mf, 'utf8')); if (old.build === BUILD) manifest.clips = old.clips || []; } catch (e) { }
   // the topics, in the How to screen's own order, read as the parent then the coach then the admin
   const topics = [];
   for (const who of ['mum', 'jaz', 'boss']) for (const t of await listTopics(b, P.quiet.personas[who])) if (!topics.some(x => x.id === t.id)) topics.push(t);
@@ -81,10 +83,11 @@ const OVERLAY = () => {
     if (only.length && !only.includes(t.id)) continue;
     const w = WALKS[t.id] || { who: 'mum', scen: 'quiet' };
     const clip = await record(b, P[w.scen], w.who, t);
-    manifest.clips.push(clip);
+    manifest.clips = manifest.clips.filter(c => c.id !== clip.id).concat(clip);
     console.log(`${t.id.padEnd(11)} ${w.who.padEnd(5)} ${w.scen.padEnd(6)} ${clip.steps} steps  ${clip.seconds}s${clip.misses.length ? '  MISS: ' + clip.misses.join(', ') : ''}`);
   }
-  fs.writeFileSync(path.join(outDir, 'manifest.json'), JSON.stringify(manifest, null, 1));
+  manifest.clips.sort((a, b) => topics.findIndex(t => t.id === a.id) - topics.findIndex(t => t.id === b.id));
+  fs.writeFileSync(mf, JSON.stringify(manifest, null, 1));
   fs.writeFileSync(path.join(outDir, 'INDEX.md'), index(manifest));
   fs.rmSync(seedDir, { recursive: true, force: true });
   await b.close();
@@ -153,6 +156,7 @@ const OVERLAY = () => {
       go: async hash => { await open(page, hash); await page.evaluate(OVERLAY); await page.waitForTimeout(300); },
       type: async (sel, text) => { try { await page.fill(sel, text); await page.waitForTimeout(600); } catch (e) { misses.push('type ' + sel); } },
       closeSheet: async () => { try { await page.evaluate(() => { const sh = document.getElementById('sheet'); if (sh && !sh.hidden) document.getElementById('scrim').click(); }); } catch (e) { } await page.waitForTimeout(400); },
+      pick: async (sel, prefix) => { try { await page.evaluate(([sel, p]) => { const el = document.querySelector(sel); const o = [...el.options].find(o => o.value.startsWith(p)); if (o) { el.value = o.value; el.dispatchEvent(new Event('change', { bubbles: true })); } }, [sel, prefix]); await page.waitForTimeout(600); } catch (e) { misses.push('pick ' + sel); } },
       scroll: async y => { await page.evaluate(y => window.scrollBy({ top: y, behavior: 'smooth' }), y); await page.waitForTimeout(900); }
     };
     await h.say(t.lead, t.title);
@@ -258,6 +262,7 @@ const TOURS = {
   },
 
   team: async h => {
+    await h.go('#/team/sbA/season');
     await h.go('#/team/sbA/squad'); await h.say(0);
     await h.scroll(600); await h.type('#newNum', '14'); await h.type('#newName', 'Ella Moreno'); await h.tap('#app [data-act="addplayer"]', 'Add'); await h.hold(1500);
     await h.say(1); await h.go('#/settings'); await h.scroll(500); await h.hold(1800);
@@ -266,15 +271,18 @@ const TOURS = {
     await h.say(3); await h.tab('calendar'); await h.tap('#app [data-act="calnew"]', 'the +'); await h.hold(2200); await h.closeSheet();
   },
   families: async h => {
+    await h.go('#/team/sbA/season');
     await h.go('#/team/sbA/squad'); await h.say(0);
     await h.tap('#app [data-act="joinnew"]', 'Make a team link'); await h.hold(1200);
-    await h.tap('#app [data-act="copylink"]', 'Copy the link'); await h.hold(1200);
+    await h.tap('#app [data-act="copylink"]', 'Copy the link', true); await h.hold(1200);
     await h.say(1); await h.scroll(-300); await h.hold(1200);
     await h.say(2);
   },
   lineup: async h => {
+    await h.go('#/team/sbA/season');
     await h.say(0); await h.tab('game'); await h.tap('#app [data-act="navgame"]', 'the next game');
     await h.tap('#subtabs [data-gview="plan"]', 'Lineup'); await h.hold(800);
+    if (await h.tap('#app [data-act="editmatch"]', 'Pick a shape', true)) { await h.pick('#mShape', 'preset:'); await h.hold(800); await h.tap('#sheet [data-act="savematch"]', 'Save changes'); await h.hold(800); await h.tap('#subtabs [data-gview="plan"]', 'Lineup'); }
     await h.say(1); await h.tap('#app [data-act="snapstart"]', 'Plan kick-off'); await h.hold(1200);
     await h.tap('#sheet [data-checked="1"]', 'Plan for n players'); await h.hold(1200);
     await h.tap('#sheet [data-act="snapplayer"]', 'the first player'); await h.hold(1000);
@@ -298,14 +306,16 @@ const TOURS = {
     await h.say(4);
   },
   after: async h => {
-    await h.say(0); await h.tab('home'); await h.tap('#app [data-act="gotoplayer"], #app [data-act="openmatch"]', 'the last game'); await h.hold(800);
+    await h.go('#/team/sbA/season');
+    await h.say(0); await h.go('#/team/sbA/season'); await h.tap('#app [data-act="gotoplayer"], #app [data-act="openmatch"]', 'the last game'); await h.hold(800);
     await h.tap('#subtabs [data-gview="recap"]', 'Recap'); await h.scroll(400); await h.hold(1500);
     await h.say(1); await h.tap('#subtabs [data-gview="stats"]', 'Stats'); await h.hold(1500); await h.tap('#subtabs [data-gview="live"]', 'Log'); await h.hold(1500);
     await h.say(2); await h.tap('#app [data-act="fixclock"]', 'Clock reading wrong?'); await h.hold(2200); await h.closeSheet();
     await h.say(3); await h.go('#/team/sbA/minutes'); await h.hold(2000);
   },
   practice: async h => {
-    await h.say(0); await h.go('#/team/sbA/practice'); await h.hold(1200);
+    await h.go('#/team/sbA/season');
+    await h.say(0); await h.go('#/team/sbA/practice'); await h.hold(800); await h.tap('#app [data-act="practab"][data-k="drills"]', 'Drills'); await h.hold(1000);
     await h.tap('#app .drillrow', 'a drill'); await h.hold(2200); await h.closeSheet();
     await h.say(1); await h.tab('calendar'); await h.tap('#app [data-act="calitem"][data-k="practice"]', 'the practice'); await h.hold(800);
     await h.tap('#sheet [data-act="pracfromcal"]', 'Plan'); await h.hold(2200);
@@ -313,8 +323,12 @@ const TOURS = {
     await h.say(3); await h.go('#/team/sbA/season'); await h.scroll(500); await h.hold(1500);
   },
   register: async h => {
-    await h.tab('home'); await h.say(0); await h.tap('#app [data-act="attend"]', 'Who came?'); await h.hold(1000);
-    await h.say(1); await h.tap('#sheet [data-act="attmark"]', 'a player'); await h.hold(600); await h.tap('#sheet [data-act="attmark"]:nth-of-type(2)', 'another'); await h.hold(600);
+    await h.go('#/team/sbA/season'); await h.say(0); await h.tap('#app [data-act="attend"]', 'Who came?', true);
+    await h.say(1); await h.go('#/team/sbA/attendance'); await h.hold(1500);
+    await h.tab('calendar'); await h.tap('#app [data-act="calpast"]', 'Earlier'); await h.hold(600);
+    await h.tap('#app [data-act="calitem"][data-k="practice"]', 'a past practice'); await h.hold(800);
+    await h.tap('#sheet [data-act="attend"]', 'Take attendance'); await h.hold(800);
+    await h.tap('#sheet [data-act="attmark"]', 'a player'); await h.hold(600); await h.tap('#sheet [data-act="attmark"]:nth-of-type(2)', 'another'); await h.hold(600);
     await h.tap('#sheet [data-act="attsave"]', 'Save'); await h.hold(1500);
     await h.say(2);
   },
