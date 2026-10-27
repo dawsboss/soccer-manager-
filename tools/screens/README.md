@@ -24,18 +24,22 @@ node shoot.js live.json jaz shots/jaz-subs subs       # the coach subbing: the l
 node gen-club.js quiet quiet.json fields && node shoot.js quiet.json boss shots/boss-sched scheduler   # the Scheduler's board, with fields and permits on the club
 node render-states.js && node shoot-states.js shots/onboarding   # invite, team link, registration, share pages
 python3 index.py                        # INDEX.md: every capture by persona and step
-node clips.js quiet.json clips          # a silent clip per How to topic (build 192): needs ffmpeg; clips/INDEX.md lists them
+node clips.js clips                     # a silent clip per How to topic, walking the real screens (build 192): needs ffmpeg; seeds both clubs itself; clips/INDEX.md lists them
 ```
 
 `gen-club.js` shapes the club per phone the way `orgs/{code}` is read (a family's phone holds her
 own child's record, the rest of the squad by number, staff names only, no log); change the people
 or the fixtures there. `shoot.js` is the tours: add a step as a tap and a `capture()`; a tap that
 finds nothing for that role is written to the manifest as a `MISS`, which is itself a fact worth
-knowing. `clips.js` records the How to topics (build 192): as the parent for every topic she has, then the
-coach, then the admin, it opens each topic, reads the steps off the screen, shows each step's words
-as a caption, rings and taps its button and holds the screen it opened; Chromium records it and
-ffmpeg makes an `.mp4` and a poster per topic. The clips are files to look at, never in the repo and
-never in the app; make them again when the screens change.
+knowing. `clips.js` records the How to topics as walks through the real screens (build 192; the owner,
+2026-10-27: *videos of the actual things to do*): one scripted walk per topic in `TOURS`, as the
+person it is for (the parent opens Home and taps Going, the coach starts the clock on Track, logs a
+goal and makes a sub, the admin opens People and the Scheduler), on the quiet club or the live one
+(`WALKS`), with each step's words, read off the How to screen, as the caption over the action and
+every tap ringed before it lands; Chromium records it and ffmpeg makes an `.mp4` and a poster per
+topic. A tap that finds nothing is a `MISS` in the manifest and the walk goes on. The clips are
+files to look at, never in the repo and never in the app; make them again when the screens change,
+and give a new topic a walk or it is recorded as its How to page alone.
 
 `render-states.js` draws the states a signed-out or not-yet-in phone meets through the
 test harness and `shoot-states.js` drops them into the page shell, and serves the share pages
