@@ -37,7 +37,10 @@ const cases = [
   [{ view: 'sessions' }, '#/training'],
   // build 106: messages and notifications are two screens; build 148, What's new
   [{ view: 'inbox' }, '#/messages'],
-  [{ view: 'notes' }, '#/whats-new']
+  [{ view: 'notes' }, '#/whats-new'],
+  // build 192: How to, the tutorial, and one of its topics
+  [{ view: 'guide', howto: null }, '#/how-to'],
+  [{ view: 'guide', howto: 'coming' }, '#/how-to/coming']
 ];
 
 console.log('--- the screen turns into a readable path ---');

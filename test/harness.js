@@ -259,6 +259,8 @@ const EXPORTS = `{
   isSessionCoach, coachesSessions, sessOnly, isCoachAny, INVITE_ROLES, CLUB_ROLES, sheetPersonRoles, sessCoaches,
   /* copy and vocabulary (UX-REVIEW.md, 2; build 144) */
   ROLE_LABEL, refusedMsg, roleWords, roleCard, roleCardSeen, INFO, infoBtn, sheetInfo, CAL_KIND,
+  /* How to: the tutorial (build 192) */
+  HOWTO, howtoWho, howtoTopics, viewHowto,
   /* a family's own Home and Season (build 142) */
   kidSeasonLine, kidPositions, cameWords, sheetChild, scoreSpan, landNow, get landHome() { return landHome }, set landHome(v) { landHome = v },
   alertsList: () => alertsHere().list, alertBar, calAlerts, elseUnread, openAlert, noteMine, pushAlert,

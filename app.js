@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '191';
+const BUILD = '192';
 const BUILT = '2026-10-25';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -1748,6 +1748,194 @@ const infoBtn = k => INFO[k] ? ` <button class="infobtn" type="button" data-act=
 function sheetInfo(k) {
   const x = INFO[k]; if (!x) return;
   openSheet(`<h3>${esc(x[0])}</h3><p class="muted" style="margin-top:0">${esc(x[1])}</p>`);
+}
+
+/* ---------------- How to: the tutorial (build 192) ---------------- */
+/* The owner, 2026-10-26: "a tutorial for the site ... to help new, tech
+   incapable, and coaches of all sizes". Not a tour that pops over every
+   screen the first time (UX-REVIEW.md, 2.4 says why a fixture like that is
+   never read twice), and not a manual: a screen under More, *How to*, that
+   lists what a person does here as short topics, picked for what she is in
+   the club (a parent is never shown the clock, a tracker never the lineup),
+   each a few numbered steps in the glossary's words with, where the step
+   names a screen, a button that goes there through the same handler a tap
+   would, so the role checks apply and nothing here is a door the rest of the
+   app would refuse. Linked from More, from Settings → You, and from the role
+   card the first time she opens the club, so the person who most needs it
+   sees it once without hunting. Names no club, team or child: the words are
+   the same for everyone, and so a locked device draws none of it. */
+const HOWTO = [
+  { id: 'around', title: 'Finding your way around', who: ['all'], lead: 'Five tabs, one arrow, and where your account lives.',
+    steps: [
+      { say: 'The bar at the bottom is the whole app: Home, Calendar, Game, Messages and More. Tap one to go there; tap it again to go back to its top.' },
+      { say: 'The arrow at the top left goes back one screen. Hold a finger on it and it says where.' },
+      { say: 'The club’s name at the top switches club, if you are in more than one. The team’s name switches team, if you see more than one.' },
+      { say: 'Your picture, or your initial, at the top right is your account: your name, the ways you sign in, and Sign out.' },
+      { say: 'More holds what is not a tab: Settings, What’s new and this guide.', go: { act: 'tab', tab: 'more' }, label: 'Open More' }
+    ] },
+  { id: 'home', title: 'What Home shows you', who: ['all'], lead: 'The first screen: the next thing on, and the one after it.',
+    steps: [
+      { say: 'Home opens on your child: this season in one line, then the next game or practice with Going, Not going and Maybe under it.', who: ['family'] },
+      { say: 'Home opens on your team: the game being played, the next game, the next practice, then what is coming up.', who: ['staff'] },
+      { say: 'The next game and practice each carry what you need on the day: when, where, directions, and a tap into the game itself.' },
+      { say: 'Tap a card to open it: the game, the practice, or the team on the calendar.', go: { act: 'tab', tab: 'home' }, label: 'Open Home' }
+    ] },
+  { id: 'coming', title: 'Say whether your child is coming', who: ['family'], lead: 'One tap, and the coach knows.',
+    steps: [
+      { say: 'Open Home. The next game or practice is the first card, with Going, Not going and Maybe on it.', go: { act: 'tab', tab: 'home' }, label: 'Open Home' },
+      { say: 'Tap your answer. A bar sweeps across it until the club has it; with no signal it waits on the phone and goes later.' },
+      { say: 'For another day, open the Calendar and tap the game or practice. Your answer is first in its sheet, with a box for a note to the coach.', go: { act: 'tab', tab: 'calendar' }, label: 'Open the Calendar' },
+      { say: 'Change your answer any time before kick-off. The coach sees who is coming and plans the game with it.' }
+    ] },
+  { id: 'follow', title: 'Follow a game', who: ['all'], lead: 'The score as it happens, and the game told back after.',
+    steps: [
+      { say: 'Game at the bottom lists your games by day: being played first, then coming up, then results.', go: { act: 'tab', tab: 'game' }, label: 'Open Game' },
+      { say: 'Open a game and tap Live: the score, what has happened and when. Before kick-off it says when, where, the kit and when to arrive.' },
+      { say: 'Notify me on Live tells this phone about each goal, kick-off, half time and full time, even with the app closed, once notifications are on.', who: ['signedin'] },
+      { say: 'Once it is over, Recap tells the game back and Stats has the minutes and the numbers.' }
+    ] },
+  { id: 'calendar', title: 'Put the calendar on your phone', who: ['all'], lead: 'Every game and practice, in the calendar you already use.',
+    steps: [
+      { say: 'Calendar shows everything with a date: games, practices and events, by schedule, day, week or month.', go: { act: 'tab', tab: 'calendar' }, label: 'Open the Calendar' },
+      { say: 'Add to your calendar, under the views, puts it in Google Calendar, or Apple, Outlook or another. Pick the one your phone uses.' },
+      { say: 'Tap any game or practice for the details: where it is, directions, and what the coach has said.' }
+    ] },
+  { id: 'messages', title: 'Messages and notices', who: ['signedin'], lead: 'Who you can write to, and what the team is told.',
+    steps: [
+      { say: 'Messages at the bottom. Message the coaches at the top opens your conversation with your child’s coaches. The club’s admins can read it too, so nobody is ever alone with a parent.', who: ['family'], go: { act: 'goview', v: 'inbox' }, label: 'Open Messages' },
+      { say: 'Team notices are the coaches’ announcements. They are one-way: to reply, message the coaches.', who: ['family'] },
+      { say: 'New message picks one person or several: a family on your team, or a colleague. Each gets a conversation of their own.', who: ['staff'], go: { act: 'goview', v: 'inbox' }, label: 'Open Messages' },
+      { say: 'Post a notice to tell every family on the team at once.', who: ['coach', 'helper'] },
+      { say: 'Changes, at the top of Messages, lists your games and practices moved, called off or new.', who: ['family'] },
+      { say: 'What’s new, under More, lists games and practices moved, called off or new, and club activity for an admin.', who: ['staff'], go: { act: 'goview', v: 'notes' }, label: 'Open What’s new' }
+    ] },
+  { id: 'notify', title: 'Get told on a closed phone', who: ['signedin'], lead: 'A goal, a message or a practice called off, even with the app shut.',
+    steps: [
+      { say: 'More, then Settings, then Notifications: Turn on, and say yes when the phone asks.', go: { act: 'goview', v: 'setup' }, label: 'Open Settings' },
+      { say: 'On an iPhone, add TeamPlayHQ to the Home Screen first (Share, then Add to Home Screen) and open it from there. Safari in a tab cannot notify you.' },
+      { say: 'Then pick what notifies you: messages, notices, calendar changes. A kind you turn off is still kept for you to read.' }
+    ] },
+  { id: 'homescreen', title: 'Put it on your Home Screen', who: ['all'], lead: 'An icon like any app, and it works with no signal.',
+    steps: [
+      { say: 'iPhone: in Safari, tap Share (the square with an arrow pointing up), then Add to Home Screen.' },
+      { say: 'Android: in Chrome, tap the three dots at the top right, then Add to Home screen or Install app.' },
+      { say: 'Open it from the icon from then on. What you do with no signal is kept on the phone and sent the moment there is one.' }
+    ] },
+  { id: 'offline', title: 'No signal? It still works', who: ['all'], lead: 'The field has no signal. Nothing you do there is lost.',
+    steps: [
+      { say: 'The badge at the top says where things stand: Synced, Offline, Not synced, or Waiting to send with a count.' },
+      { say: 'Everything you do with no signal is kept on this phone and sent the moment there is one, even if the app was closed in between.' },
+      { say: 'Settings says what is still waiting. That didn’t save means the club turned a change down: it is kept here and tried again, and the club admin is told what to fix.', go: { act: 'goview', v: 'setup' }, label: 'Open Settings' }
+    ] },
+  { id: 'team', title: 'Set up your team', who: ['coach'], lead: 'Players, a shape, the games and the practices. Ten minutes.',
+    steps: [
+      { say: 'Players is the team: Add a player with a name and a shirt number. Everything else about a player can wait.', go: { act: 'goview', v: 'roster' }, label: 'Open Players' },
+      { say: 'Settings, then This team: the shape (4-3-3, 2-3-1 and so on), how long the halves are and how many play at once.', go: { act: 'goview', v: 'setup' }, label: 'Open Settings' },
+      { say: 'Season, then Add a game: the opponent, the date, kick-off and where. The kit and the arrive-by time can come later.', go: { act: 'goview', v: 'season' }, label: 'Open Season' },
+      { say: 'Calendar, then the + at the end of the views row: a practice, weekly if you like. Call one week off with one tap on that week.', go: { act: 'tab', tab: 'calendar' }, label: 'Open the Calendar' }
+    ] },
+  { id: 'families', title: 'Get the families in', who: ['coach'], lead: 'One link for the whole team, and you let each parent in.',
+    steps: [
+      { say: 'Players, then the team link: Email it, or Copy the link and send it however you talk to the families.', go: { act: 'goview', v: 'roster' }, label: 'Open Players' },
+      { say: 'A parent opens it, signs in and gives the child’s shirt number, or the child’s details if the child is not on the list yet. The ask appears on Players; let them in with one tap.' },
+      { say: 'People, then Invite someone, makes a link for a coach, a tracker, an assistant coach or a parent.', who: ['admin'], go: { act: 'goview', v: 'people' }, label: 'Open People' },
+      { say: 'Once in, a parent sees their own child by name and the rest by number, says who is coming, and can message you.' }
+    ] },
+  { id: 'lineup', title: 'Before kick-off: plan the lineup', who: ['coach', 'helper'], lead: 'Who starts where, and who comes on when.',
+    steps: [
+      { say: 'Open the game from Game or Home and tap Lineup. With no shape yet, pick one first.', go: { act: 'tab', tab: 'game' }, label: 'Open Game' },
+      { say: 'Plan kick-off asks who is coming, then fills the pitch spot by spot. Tap a spot or a player to change it.' },
+      { say: 'Add a picture of the pitch for each time you mean to make subs: half-time, every ten minutes, whatever suits.' },
+      { say: 'Lock in your plan. The planned subs are then due on the clock, and Subs says who goes on for whom when the time comes.' },
+      { say: 'Tell the bench says the changes as calls: who goes on, at which spot, for whom.' }
+    ] },
+  { id: 'sideline', title: 'On the sideline: run the game', who: ['coach', 'tracker'], lead: 'The clock, the goals and the subs, one tap each.',
+    steps: [
+      { say: 'Open the game and tap Track. Start at kick-off, End 1st half, Start 2nd half, End game. Pause only when play stops.', go: { act: 'tab', tab: 'game' }, label: 'Open Game' },
+      { say: 'A goal, a shot, a corner: one tap each on Track, each button naming its side. Full screen puts every button on one screen with nothing to scroll.' },
+      { say: 'Subs: tap a player on the bench or the pitch, then in the sheet the one going on or coming off. The three furthest behind their minutes are orange.', who: ['coach'] },
+      { say: 'Got something wrong? Undo last on Track takes back the newest tap, and any line in the log opens to fix its time.' },
+      { say: 'No signal at the field is fine: every tap is kept on the phone and sent later.' }
+    ] },
+  { id: 'after', title: 'After the game', who: ['coach', 'tracker', 'helper'], lead: 'The game told back, and the minutes to carry forward.',
+    steps: [
+      { say: 'Recap tells the game back: the goals in their spells, the quiet spells, what went well and what to work on.' },
+      { say: 'Stats has the minutes, the goals, the shots and the running totals; Log has every tap in order.' },
+      { say: 'Clock reading wrong? From the match log, Fix the clock asks where the time went wrong, half by half, and every minute follows.', who: ['coach'] },
+      { say: 'Season, then Minutes, shows who is short or over across the season: what the next plan should answer.', who: ['coach', 'helper'], go: { act: 'goview', v: 'minutes' }, label: 'Open Minutes' }
+    ] },
+  { id: 'practice', title: 'Practices, plans and drills', who: ['train'], lead: 'A library of drills, and a plan for each practice.',
+    steps: [
+      { say: 'Training is the team’s third tab: drills filtered by age, how many players and what you are working on, each with a diagram.', go: { act: 'goview', v: 'practice' }, label: 'Open Training' },
+      { say: 'A plan hangs off a practice on the calendar: open the practice, plan it, add drills with minutes. Run it counts each one down on the night.' },
+      { say: 'Drills under More is the library, the club’s own and yours. Save to mine copies any drill; Share with the club gives it to every coach.', go: { act: 'moredrills' }, label: 'Open Drills' },
+      { say: 'What needs work, on Season, reads the last games and suggests the drills that answer them.', who: ['coach'] }
+    ] },
+  { id: 'register', title: 'Take the register', who: ['coach', 'helper'], lead: 'Who came, and the season counted from it.',
+    steps: [
+      { say: 'Home asks Who came to the last practice? ahead of what is next, for whoever takes the register.', go: { act: 'tab', tab: 'home' }, label: 'Open Home' },
+      { say: 'Season, then Attendance: tick who came. It starts from the families’ answers, and a miss nobody warned about is counted apart.', go: { act: 'goview', v: 'attend' }, label: 'Open Attendance' },
+      { say: 'A family sees their own child’s record on Home, as came to 4 of 5 practices.' }
+    ] },
+  { id: 'club', title: 'Run the club', who: ['admin'], lead: 'People, fields, the term, and a copy of everything.',
+    steps: [
+      { say: 'Settings, then Club: Club details, People, the Scheduler, Fields and permits, Coach compliance and Bulk import.', go: { act: 'goview', v: 'setup' }, label: 'Open Settings' },
+      { say: 'People is who is in and as what: invite someone, take a role away, name an assistant coach. Only the club owner takes an admin away.', go: { act: 'goview', v: 'people' }, label: 'Open People' },
+      { say: 'The Scheduler lays every team’s practices out on the club’s fields by the rules you set, and writes the term onto every calendar.', go: { act: 'goview', v: 'scheduler' }, label: 'Open the Scheduler' },
+      { say: 'Bulk import takes a season from a spreadsheet: players, games, practices and fields. Check readiness, under Advanced, says what the club still needs set up.' },
+      { say: 'Download a copy, under Advanced, keeps a backup on your phone. The club keeps one every night as well.' }
+    ] },
+  { id: 'sessions', title: 'Sessions: 1-1s and small groups', who: ['sessions'], lead: 'Coaching that belongs to no team, booked and counted.',
+    steps: [
+      { say: 'Sessions lists what you can book for your child: a coach’s bookable times and open groups. Ask for a place, and the club confirms it.', who: ['family'], go: { act: 'goview', v: 'shome' }, label: 'Open Sessions' },
+      { say: 'Offer your bookable times on My calendar. Families book them, the club counts the places, and a full time has a waiting list.', who: ['coach', 'sesscoach'], go: { act: 'tab', tab: 'calendar' }, label: 'Open the Calendar' },
+      { say: 'The Sessions door, from More or the switch at the top, is the club’s business side: fees, coach hours and fields.', who: ['admin', 'sesscoach'] },
+      { say: 'A session reaches the families on the calendar like a practice, and its coach takes the register the same way.' }
+    ] }
+];
+/* Who she is here, as the tags the topics are picked by. 'all' for everyone;
+   the rest read the same predicates the screens do, so a parent who also
+   coaches gets both halves. */
+function howtoWho() {
+  const w = new Set(['all']);
+  if (me) w.add('signedin');
+  const fam = navKind() === 'family' || famRole(restricted()) || guardsAnyone() || (!!me && myPlayers().some(p => (p.self || {})[me.uid]));
+  if (fam) w.add('family');
+  if (!gated() || canAdmin() || (!!me && teams().some(t => isCoach(t.id, me.uid)))) w.add('coach');
+  if (me && isHelperAny(me.uid)) w.add('helper');
+  if (me && teams().some(t => isTracker(t.id, me.uid))) w.add('tracker');
+  if (canAdmin()) w.add('admin');
+  if (me && isSessionCoach(me.uid)) w.add('sesscoach');
+  if (['coach', 'helper', 'tracker', 'admin', 'sesscoach'].some(k => w.has(k)) || (me && isViewer(me.uid))) w.add('staff');
+  if (canSessions()) w.add('sessions');
+  if (canTrain()) w.add('train');
+  return w;
+}
+const howtoFits = (x, w) => !x.who || x.who.some(k => w.has(k));
+/* The topics for her, each with only the steps that are hers. A topic whose
+   every step is somebody else's is left out. */
+function howtoTopics() {
+  const w = howtoWho();
+  return HOWTO.filter(t => howtoFits(t, w)).map(t => ({ ...t, steps: t.steps.filter(s => howtoFits(s, w)) })).filter(t => t.steps.length);
+}
+// a step's button: the same tap the screen's own would be, through the one handler
+const howtoGo = s => s.go ? `<button class="btn quiet sm" type="button" data-act="${esc(s.go.act)}"${Object.entries(s.go).filter(([k]) => k !== 'act').map(([k, v]) => ` data-${k}="${esc(v)}"`).join('')}>${esc(s.label || 'Take me there')}</button>` : '';
+function viewHowto() {
+  const topics = howtoTopics();
+  const open = topics.find(t => t.id === ui.howto);
+  if (!open) ui.howto = null;
+  if (!open) {
+    return `<div class="stack"><h2>How to</h2>
+      <p class="muted" style="margin-top:0">What you do here, step by step, picked for what you are in the club. Each one takes a minute.</p>
+      <div class="card setcard"><div class="plist">${topics.map(t => `<button class="prow go" type="button" data-act="howto" data-k="${esc(t.id)}" style="grid-template-columns:1fr">
+        <span style="min-width:0"><span class="pname">${esc(t.title)}</span><span class="psub">${esc(t.lead)}</span></span></button>`).join('')}</div></div>
+      <p class="muted">Something not here? Ask your coach, or the club admin, who can do most things for you.</p></div>`;
+  }
+  const i = topics.indexOf(open), next = topics[i + 1];
+  return `<div class="stack"><div class="card howto"><h2>${esc(open.title)}</h2><p class="muted" style="margin-top:0">${esc(open.lead)}</p>
+      <ol class="howsteps">${open.steps.map((s, n) => `<li><span class="hownum">${n + 1}</span><span class="howsay"><span>${esc(s.say)}</span>${howtoGo(s)}</span></li>`).join('')}</ol></div>
+    ${next ? `<button class="card go tapcard" type="button" data-act="howto" data-k="${esc(next.id)}"><span class="tc-main"><span class="muted">Next</span><b>${esc(next.title)}</b></span></button>` : ''}
+    <button class="btn quiet wide" type="button" data-act="howto">All the how-tos</button></div>`;
 }
 const refusedWhy = () => `The club\u2019s set-up is out of date: ${canAdmin() ? 'Check readiness, under Settings \u2192 Advanced, says what to do' : 'tell the club admin'}.`;
 const refusedMsg = (kept, lead = 'That didn\u2019t save.') => `${lead} ${kept ? 'It is kept on this phone. ' : ''}${refusedWhy()}`;
@@ -7607,7 +7795,8 @@ function roleWords(lim) {
 }
 function roleCard(lim) {
   if (!lim || roleCardSeen(lim)) return '';
-  return `<div class="rolebar rolecard" data-role="${esc(lim)}"><span>${roleWords(lim)}</span> <button class="linkbtn dark" data-act="roleok" data-v="${esc(lim)}">Got it</button></div>`;
+  // Show me how opens the tutorial (build 192); the card stays until Got it, so the way to it is not lost with the tap
+  return `<div class="rolebar rolecard" data-role="${esc(lim)}"><span>${roleWords(lim)}</span> <span class="row" style="gap:14px"><button class="linkbtn dark" data-act="howto">Show me how</button><button class="linkbtn dark" data-act="roleok" data-v="${esc(lim)}">Got it</button></span></div>`;
 }
 
 function render() {
@@ -7792,7 +7981,7 @@ function render() {
             v === 'formation' ? viewFormation() : v === 'games' ? viewGames() : v === 'club' ? viewClub() : v === 'people' ? viewPeople() : v === 'admin' ? viewAdmin()
               : v === 'mine' ? viewMine() : v === 'practice' ? viewPractice()
                 : v === 'inbox' ? viewInbox() : v === 'notes' ? viewNotes() : v === 'thread' ? viewThread() : v === 'sessions' ? viewSessions() : v === 'shome' ? viewSessHome() : v === 'scheduler' ? viewScheduler() : v === 'regs' ? viewRegs() : v === 'tryout' ? viewTryout() : v === 'comply' ? viewComply()
-                : v === 'setup' ? viewSetup() : viewCalendar());
+                : v === 'setup' ? viewSetup() : v === 'guide' ? viewHowto() : viewCalendar());
   } finally { placeMemo = null; }
   syncHash();
   if (drillLink) setTimeout(openDrillLink, 0);
@@ -7918,7 +8107,7 @@ const viewScope = (v = ui.view) => v === 'calendar' || v === 'mine' ? (me ? 'me'
 const VIEW_TITLE = {
   calendar: 'Calendar', setup: 'Settings', people: 'People', admin: 'Club details', sessions: 'Sessions',
   scheduler: 'Scheduler', inbox: 'Messages', thread: 'Messages', notes: 'What\'s new', mine: 'My players', formation: 'Shapes',
-  games: 'Games', regs: 'Registration', tryout: 'Tryouts', comply: 'Coach compliance', club: 'Club home', shome: 'Home'
+  games: 'Games', regs: 'Registration', tryout: 'Tryouts', comply: 'Coach compliance', club: 'Club home', shome: 'Home', guide: 'How to'
 };
 // the Sessions view draws three of Settings' screens too, each under its own name
 const screenTitle = v => v === 'sessions' && sessSetTab() ? SESS_SET[sessSetTab()] : VIEW_TITLE[v];
@@ -8092,6 +8281,8 @@ function upView(v = ui.view) {
   // the Sessions door's Home is a tab's own
   if (v === 'shome') return null;
   if (v === 'tryout') return 'club';
+  // How to: a topic goes back to the list first, the list up to Home like the rest of More's screens
+  if (v === 'guide') return ui.howto ? 'guide' : doorHome();
   if (v === 'setup' || v === 'notes') return doorHome();
   // staff's My players, under More
   if (v === 'mine') return doorHome();
@@ -8103,7 +8294,7 @@ function upView(v = ui.view) {
 }
 // the arrow says where it goes, read out and on a long press: the screen upView() names
 function upLabelFor(up) {
-  if (up === ui.view) return ui.view === 'regs' ? 'Back to the programs' : 'Back to the tryouts';
+  if (up === ui.view) return ui.view === 'regs' ? 'Back to the programs' : ui.view === 'guide' ? 'Back to How to' : 'Back to the tryouts';
   const name = up === 'setup' ? 'Settings' : up === 'club' ? 'Club home' : up === 'calendar' ? 'the calendar'
     : up === 'inbox' ? 'Messages' : up === 'season' ? (homeView() === 'season' ? 'Home' : 'the team') : up === 'games' ? 'the games' : up === 'shome' ? 'Home' : VIEW_TITLE[up];
   return name ? 'Back to ' + name : 'Back';
@@ -8205,6 +8396,8 @@ function sheetMore() {
     ${inSess && canOffer() ? Object.entries(SESS_SET).map(([k, l]) => `<button class="opt" data-act="sesstab" data-k="${k}"><b>${l}</b>
       <span class="rowsub">${SESS_MORE[k]}</span></button>`).join('') : ''}
     ${doorRow()}
+    <button class="opt" data-act="howto"><b>How to use ${APP_NAME}</b>
+      <span class="rowsub">Step by step, picked for what you do here</span></button>
     <button class="opt" data-act="goview" data-v="setup"><b>Settings</b>
       <span class="rowsub">${esc(settingsLine())}</span></button>
     ${clubs.length > 1 || canNewClub() ? `<button class="opt" data-act="clubswitch"><b>Clubs</b>
@@ -18872,6 +19065,7 @@ const SET_ICON = {
   test: SI('<path d="M9.5 3.5h5M10.5 3.5v6L5 19a1.3 1.3 0 0 0 1.1 2h11.8a1.3 1.3 0 0 0 1.1-2l-5.5-9.5v-6"/><path d="M7.5 15h9"/>'),
   peek: SI('<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>'),
   about: SI('<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5M12 7.8v.2"/>'),
+  howto: SI('<path d="M12 6.5c-1.6-1.4-3.8-2-7.5-2v13c3.7 0 5.9.6 7.5 2 1.6-1.4 3.8-2 7.5-2v-13c-3.7 0-5.9.6-7.5 2z"/><path d="M12 6.5v13"/>'),
   crest: SI('<path d="M8.5 3.5 4 6l1.5 4.5L7.5 10v10.5h9V10l2 .5L20 6l-4.5-2.5c-.5 1.6-1.9 2.5-3.5 2.5s-3-.9-3.5-2.5z"/>'),
   shapes: SI('<circle cx="12" cy="5.5" r="1.8"/><circle cx="6" cy="11" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="18" cy="11" r="1.8"/><circle cx="8.5" cy="18" r="1.8"/><circle cx="15.5" cy="18" r="1.8"/>'),
   count: SI('<path d="M5 19.5V11M10 19.5V5M15 19.5v-6M20 19.5V8"/>'),
@@ -18918,7 +19112,8 @@ function viewSetup() {
     : `<button class="card go sethero" type="button" data-act="signinsheet"><span class="setavatar">?</span>
       <span class="settxt"><b>Sign in</b><span class="setsub">Signed out, everything stays on this device. Sign in to share it with your club.</span></span></button>`;
   const you = `<section class="setgroup"><h2 class="sechead">You</h2>${hero}${canTrain() ? `<button class="card go setswitch quiet" type="button" data-act="mydrills"><span class="seticon">${SET_ICON.mydrills}</span>
-      <span class="settxt"><b>My drills</b><span class="setsub">Your own drills and templates, on every phone you sign in on</span></span></button>` : ''}</section>`;
+      <span class="settxt"><b>My drills</b><span class="setsub">Your own drills and templates, on every phone you sign in on</span></span></button>` : ''}<button class="card go setswitch quiet" type="button" data-act="howto"><span class="seticon">${SET_ICON.howto}</span>
+      <span class="settxt"><b>How to use ${APP_NAME}</b><span class="setsub">Step by step, picked for what you do here</span></span></button></section>`;
   // the switches, here and nowhere else (UX-REVIEW-2.md, 6.2); What's new has a gear to them
   const notify = me ? `<section class="setgroup"><h2 class="sechead" id="setNotify">Notifications</h2><p class="secsub">What reaches this phone, and what waits for you to look</p>${notifyCards()}</section>` : '';
 
@@ -25177,6 +25372,8 @@ function onAct(e) {
     sheetPersonRoles(d.uid); return;
   }
   if (a === 'teammenu') { sheetTeams(); return; }
+  // How to: a topic, or with no topic the list (the role card, More, Settings → You and the screen's own rows)
+  if (a === 'howto') { ui.howto = d.k || null; ui.view = 'guide'; closeSheet(); render(); toTop(); return; }
   if (a === 'goview') {
     // Sessions opened from More or Club home is the sessions, not the Settings screen a last visit left it on
     if (d.v === 'sessions' && ui.sess && SESS_SET[ui.sess.tab]) ui.sess.tab = 'list';
@@ -25241,6 +25438,7 @@ function onAct(e) {
     if (up === v) {   // one of the screen's own items open: back to its list
       if (v === 'regs') { ui.regs.prog = null; ui.regs.st = 'all'; }
       if (v === 'tryout') { ui.tryout.prog = null; ui.tryout.bib = null; }
+      if (v === 'guide') ui.howto = null;
     } else if (up) { ui.view = up; if (up === 'inbox') ui.thread = null; }
     closeSheet(); render(); toTop(); return;
   }
@@ -27082,6 +27280,7 @@ function uiToHash() {
   if (ui.view === 'thread' && ui.thread && ui.thread.cid) return `#/messages/with/${sdOther(ui.thread.cid)}`;
   if (ui.view === 'thread' && ui.thread) return `#/messages/${ui.thread.tid}/${ui.thread.fam}`;
   if (ui.view === 'setup') return '#/settings';
+  if (ui.view === 'guide') return '#/how-to' + (ui.howto ? '/' + ui.howto : '');
   if (ui.view === 'sessions') { const tb = (ui.sess || {}).tab; return '#/training' + (tb && tb !== 'list' && (SESS_TABS[tb] || SESS_SET[tb]) ? '/' + tb : ''); }
   // the Sessions door's Home (DOORS.md); #/training stays the list
   if (ui.view === 'shome') return '#/sessions';
@@ -27109,6 +27308,8 @@ function hashToUi() {
   // #/notifications is its address from before build 148
   if (p[0] === 'whats-new' || p[0] === 'notifications') { ui.view = 'notes'; return true; }
   if (p[0] === 'settings') { ui.view = 'setup'; return true; }
+  // #/how-to/{topic}: a topic not hers, or none, lands on the list
+  if (p[0] === 'how-to') { ui.view = 'guide'; ui.howto = p[1] && HOWTO.some(t => t.id === p[1]) ? p[1] : null; return true; }
   /* #/drill/{key} is a drill a coach sent. The screen stays where it was and
      the drill opens over it, once: the hash goes straight back to the screen's
      own, so Back doesn't open it again. */

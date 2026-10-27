@@ -1717,3 +1717,11 @@ body[data-full="track"] main{max-width:1100px;
 .fshead .clockmeta{white-space:nowrap}
 @media (max-width:380px){.fsexit{padding:8px 12px;font-size:14px}.fshead .clock{font-size:32px}}
 @media (max-height:780px){.fsrows{grid-auto-rows:minmax(44px,1fr)}.fsrow .tallybtn{min-height:44px;padding:4px}.fs .scorenum{font-size:28px}}
+
+/* How to (build 192): a topic is numbered steps, each a sentence and, where it names a screen, a button to it */
+.howsteps{list-style:none;margin:12px 0 0;padding:0}
+.howsteps li{display:grid;grid-template-columns:32px minmax(0,1fr);gap:12px;padding:12px 0;border-top:1px solid var(--line);align-items:start}
+.howsteps li:first-child{border-top:0;padding-top:4px}
+.hownum{display:grid;place-items:center;width:32px;height:32px;border-radius:50%;background:var(--field-wash);color:var(--field-deep);font-weight:700;font-size:15px}
+.howsay{display:flex;flex-direction:column;gap:8px;min-width:0;font-size:16px;line-height:1.4}
+.howsay .btn{align-self:flex-start}

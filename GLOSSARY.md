@@ -46,6 +46,7 @@ secretary already has.
 | What changed, for a family: the card at the top of Messages (build 160; she has no What's new) | **Changes** | What's new, Notifications, Alerts |
 | Whether her phone pops up or buzzes (Settings → Notifications) | **Notifications** | alerts, the bell |
 | A change the club turned down | *That didn't save* | refused by the database, permission denied |
+| The tutorial (build 192): what you do here, step by step, picked for your role | **How to** (the screen, under More as *How to use TeamPlayHQ*; a step's button *Open Home*, *Open Settings*…) | Tutorial, Guide, Help, Walkthrough, Onboarding, Tour |
 | The end of a game | **Full time** (*FT* only where there is no room: the game header, a list's score cell, the feed's time column; UX-REVIEW-3.md, 16.10) | Final |
 
 ## Never on screen
@@ -77,6 +78,9 @@ which the suite reads separately and allows.
 - `permission denied`
 - `Final`
 - `Team helper`
+- `Tutorial`
+- `Walkthrough`
+- `Onboarding`
 
 ## Said once, not on every screen
 
@@ -86,5 +90,9 @@ which the suite reads separately and allows.
 - **A refusal** is one sentence: *That didn't save.* Then, for an admin, where to look
   (Check readiness, under Settings → Advanced); for anyone else, *tell the club admin*;
   and whether it is kept on this phone.
+- **How to do a thing** is the How to screen under More (build 192): short topics, picked
+  for her role, each a few numbered steps with a button to the screen a step names. Never a
+  tour that pops over the screens the first time, for the same reason as the role card: a
+  fixture nobody reads twice. The role card carries *Show me how* to it, once.
 - **The detail behind a label** is an ⓘ that opens a sheet (`INFO` in `app.js`), not a
   paragraph under the label.

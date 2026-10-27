@@ -132,6 +132,12 @@ const SNAP = () => {
       for (const k of ['find', 'coach', 'pic']) { if (await tap(`[data-act="pltab"][data-k="${k}"]`, 'tab ' + k)) await capture('scheduler-' + k, 'the ' + k + ' tab'); }
       await tab('more'); if (await tap('#sheet [data-act="goview"][data-v="setup"]', 'Settings')) await capture('settings', 'Settings, with the Scheduler row');
     },
+    // How to, the tutorial (build 192): the list for this persona, and the first topic
+    howto: async () => {
+      await tap('[data-act="roleok"]');
+      await go('#/how-to'); await capture('howto', 'How to: the topics for this role');
+      if (await tap('#app [data-act="howto"][data-k]', 'the first topic')) await capture('howto-topic', 'a topic: numbered steps, a button where a step names a screen');
+    },
     anon: async () => {
       await capture('welcome', 'a phone that has never opened a club, signed out');
       await tapText('Sign in'); await capture('signin-sheet', 'the sign-in sheet');
