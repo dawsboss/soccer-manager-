@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '192';
+const BUILD = '193';
 const BUILT = '2026-10-25';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -476,6 +476,8 @@ function loadLocal() {
     if (d) state = { teams: d.teams || {}, matches: d.matches || {}, access: d.access || {}, rsvp: d.rsvp || {}, children: d.children || {}, care: d.care || {}, teamCare: d.teamCare || {}, programs: d.programs || {}, waivers: d.waivers || {}, regs: d.regs || {}, agreed: d.agreed || {} };
     const u = JSON.parse(localStorage.getItem(LS_UI) || 'null');
     if (u) Object.assign(ui, u);
+    // nothing saved: a phone opening the app for the first time lands on Home, whoever she is (UX-REVIEW-4.md, 30)
+    if (!u) ui.fresh = true;
     /* Before build 61 'live' was the coach's subs screen. Someone who left a
        game open on it expects to come back to the same screen, not the feed
        that took the name. */
@@ -1811,7 +1813,7 @@ const HOWTO = [
     ] },
   { id: 'notify', title: 'Get told on a closed phone', who: ['signedin'], lead: 'A goal, a message or a practice called off, even with the app shut.',
     steps: [
-      { say: 'More, then Settings, then Notifications: Turn on, and say yes when the phone asks.', go: { act: 'goview', v: 'setup' }, label: 'Open Settings' },
+      { say: 'More, then Settings, then Notifications: Turn on, and say yes when the phone asks.', go: { act: 'goview', v: 'notify' }, label: 'Open Notifications' },
       { say: 'On an iPhone, add TeamPlayHQ to the Home Screen first (Share, then Add to Home Screen) and open it from there. Safari in a tab cannot notify you.' },
       { say: 'Then pick what notifies you: messages, notices, calendar changes. A kind you turn off is still kept for you to read.' }
     ] },
@@ -2229,13 +2231,13 @@ function readiness() {
   rows.push({ ok: nAdmins > 0, label: 'Someone administers this club', detail: nAdmins + ' admin' + (nAdmins === 1 ? '' : 's') });
   const nOwners = clubOwners().length;
   rows.push({ ok: nOwners > 0, label: 'Somebody owns it', detail: nOwners ? nOwners + ' owner' + (nOwners === 1 ? '' : 's') : 'no — any admin can take every other admin away' });
-  rows.push({ ok: nIndex > 0, label: 'The read index is not empty', detail: nIndex + ' account' + (nIndex === 1 ? '' : 's') + (nIndex ? '' : ' — every write would be refused') });
+  rows.push({ ok: nIndex > 0, label: 'Everyone in the club is listed', detail: nIndex + ' account' + (nIndex === 1 ? '' : 's') + (nIndex ? '' : ' — every write would be refused') });
   rows.push({ ok: !me || !!(a.index || {})[me.uid], label: 'Your own account is in it', detail: me ? (a.index || {})[me.uid] ? 'yes' : 'no — you would lose access' : 'not signed in' });
   const withRoles = teams().filter(t => Object.keys(teamAccess(t.id).coaches || {}).length || Object.keys(teamAccess(t.id).trackers || {}).length);
   const indexed = withRoles.filter(t => Object.keys((a.teamIndex || {})[t.id] || {}).length);
   rows.push({
     ok: indexed.length === withRoles.length,
-    label: 'Every team with a role has a team index',
+    label: 'Every team with a coach or tracker is listed',
     detail: withRoles.length ? indexed.length + ' of ' + withRoles.length : 'no team roles granted yet'
   });
   const coaches = new Set();
@@ -2243,27 +2245,29 @@ function readiness() {
   const inCoachIndex = [...coaches].filter(u => (a.coachIndex || {})[u]).length;
   rows.push({
     ok: inCoachIndex === coaches.size,
-    label: 'Every coach is in the coach index',
+    label: 'Every coach is listed as one',
     detail: coaches.size ? inCoachIndex + ' of ' + coaches.size + (inCoachIndex === coaches.size ? '' : ' — practice plans need it') : 'no coaches yet'
   });
   const withParents = teams().filter(t => Object.keys(parentsWanted(t.id)).length);
   const listed = withParents.filter(t => Object.keys((a.teamParents || {})[t.id] || {}).length);
   rows.push({
     ok: listed.length === withParents.length,
-    label: 'Every team with parents has a parent list',
+    label: 'Every team with parents has them listed',
     detail: withParents.length ? listed.length + ' of ' + withParents.length + (listed.length < withParents.length ? ' — notices are readable club-wide until then' : '') : 'no parents linked yet'
   });
   const shared = teams().filter(t => t.share);
-  rows.push({ ok: true, label: 'Shared teams have an owner list', detail: shared.length ? shared.length + ' published' : 'nothing shared' });
+  rows.push({ ok: true, label: 'Shared pages have an owner', detail: shared.length ? shared.length + ' published' : 'nothing shared' });
+  // not checked yet is not a cross on the Settings tile (mine: false): she cannot act on it, and it clears by itself with a signal
   rows.push({
-    ok: rulesCheck === 'ok',
+    ok: rulesCheck === 'ok', mine: rulesCheck === 'old' || rulesCheck === 'app',
     label: 'The published rules match this app',
     detail: rulesCheck === 'ok' ? 'version ' + RULES_VERSION
       : rulesCheck === 'old' ? 'older than version ' + RULES_VERSION + ' — paste database.rules.json'
         : rulesCheck === 'app' ? 'newer than this app — reload it'
           : 'not checked yet — needs a signal'
   });
-  rows.push({ ok: Object.keys(appOwners).length > 0, label: 'An app owner exists', detail: Object.keys(appOwners).length ? 'yes' : 'set appOwners in the console' });
+  // the developer's to set, never a club admin's: never counted on her Settings tile (UX-REVIEW-4.md, 33)
+  rows.push({ ok: Object.keys(appOwners).length > 0, mine: false, label: 'The app has an owner', detail: Object.keys(appOwners).length ? 'yes' : 'no — set by whoever runs the app, not by the club' });
   return rows;
 }
 
@@ -4528,11 +4532,12 @@ function muteCard() {
   if (!me) return '';
   const kinds = MUTE_KINDS.filter(([k]) => k === 'news' ? newsFor() : true);
   return `<div class="card"><h2 style="margin-bottom:4px">What notifies you</h2>
-    <p class="muted" style="margin:0 0 8px">Off means no pop-up, no buzz and no notification on a locked phone, on every phone you use. It still waits for you${changesInMessages() ? ' on Messages.' : `${kinds.some(([k]) => k === 'msg' || k === 'notice') ? ' on Messages or' : ''} on What's new.`}</p>
+    <p class="muted" style="margin:0 0 8px">Off means no pop-up, no buzz and no notification on a locked phone, on every phone you use. It still waits for you${changesInMessages() ? ' on Messages.' : `${kinds.some(([k]) => k === 'msg' || k === 'notice') ? ' on Messages' : ''}${kinds.some(([k]) => k === 'cal' || k === 'news') ? (kinds.some(([k]) => k === 'msg' || k === 'notice') ? ' or' : '') + ' on What\'s new' : ''}.`}</p>
     <div class="plist">${kinds.map(([k, name, sub]) => {
       const off = muted(k);
+      // one switch a row (UX-REVIEW-4.md, 24): an On and an Off pill read "On Off" whichever was pressed
       return `<div class="prow" style="grid-template-columns:minmax(0,1fr) auto"><span style="min-width:0"><span class="pname">${name}</span><span class="psub">${sub}</span></span>
-        <span class="chips" style="flex-wrap:nowrap"><button class="chip" type="button" data-act="muteset" data-k="${k}" data-v="0" aria-pressed="${!off}">On</button><button class="chip" type="button" data-act="muteset" data-k="${k}" data-v="1" aria-pressed="${off}">Off</button></span></div>`;
+        <button class="switch" type="button" role="switch" aria-checked="${!off}" data-act="muteset" data-k="${k}" data-v="${off ? 0 : 1}" aria-label="${name}: ${off ? 'off' : 'on'}"><span class="swknob"></span><span class="swword">${off ? 'Off' : 'On'}</span></button></div>`;
     }).join('')}</div></div>`;
 }
 
@@ -4556,10 +4561,11 @@ function pushCard() {
   const say = pushBusy ? 'Turning on…'
     : sup === 'install' ? 'On an iPhone or iPad, TeamPlayHQ can notify you once it is on your Home Screen: tap <b>Share</b>, then <b>Add to Home Screen</b>, open TeamPlayHQ from there, and turn them on.'
     : sup === 'no' ? 'This browser can\'t get notifications from a website. TeamPlayHQ still pops up while it is open.'
-    : sup === 'blocked' ? pushBlockedSay()
+    : sup === 'blocked' ? 'Notifications are turned off for TeamPlayHQ on this phone. Allow them in the phone\'s own settings, then turn them on here.'
     : on ? 'On. Team notices, messages, changes to your games and practices, and games you follow reach this phone even with TeamPlayHQ closed.'
     : 'Team notices, messages, changes to your games and practices, and games you follow reach this phone even with TeamPlayHQ closed.';
-  const btn = pushBusy || sup !== 'ok' ? ''
+  const btn = pushBusy ? '' : sup === 'blocked' ? '<button class="btn quiet sm" data-act="pushhow">How to allow it</button>'
+    : sup !== 'ok' ? ''
     : on ? '<button class="btn quiet sm" data-act="pushoff">Turn off</button>'
     : '<button class="btn sm" data-act="pushon">Turn on</button>';
   return `<div class="card"><div class="spread"><b>Notifications on this phone</b>${btn}</div>
@@ -7836,6 +7842,9 @@ function render() {
   if ((ui.view === 'admin' || ui.view === 'regs' || ui.view === 'comply') && !canAdmin()) ui.view = 'club';
   // the Scheduler is read by every coach too, her teams lit (SCHEDULER.md); the rest of the club's screens are the admins'
   if (ui.view === 'scheduler' && !canSched()) ui.view = 'club';
+  if (ui.view === 'notify' && !me) ui.view = 'setup';
+  // a team's set-up is its coaches' and the admins': a tracker or a family sent there lands on the team
+  if (ui.view === 'teamsetup' && (!team() || readerRole(restricted()) || restricted() === 'tracker')) ui.view = team() ? 'season' : 'club';
   // My players is the top of a family's Home since build 153 (viewFamSeason); staff with a child keep it under More
   if (ui.view === 'mine' && navKind() === 'family') ui.view = 'season';
   if (ui.view === 'mine' && !anyPlayers()) ui.view = 'calendar';
@@ -7981,7 +7990,7 @@ function render() {
             v === 'formation' ? viewFormation() : v === 'games' ? viewGames() : v === 'club' ? viewClub() : v === 'people' ? viewPeople() : v === 'admin' ? viewAdmin()
               : v === 'mine' ? viewMine() : v === 'practice' ? viewPractice()
                 : v === 'inbox' ? viewInbox() : v === 'notes' ? viewNotes() : v === 'thread' ? viewThread() : v === 'sessions' ? viewSessions() : v === 'shome' ? viewSessHome() : v === 'scheduler' ? viewScheduler() : v === 'regs' ? viewRegs() : v === 'tryout' ? viewTryout() : v === 'comply' ? viewComply()
-                : v === 'setup' ? viewSetup() : v === 'guide' ? viewHowto() : viewCalendar());
+                : v === 'setup' ? viewSetup() : v === 'notify' ? viewNotify() : v === 'teamsetup' ? viewTeamSetup() : v === 'guide' ? viewHowto() : viewCalendar());
   } finally { placeMemo = null; }
   syncHash();
   if (drillLink) setTimeout(openDrillLink, 0);
@@ -8098,7 +8107,7 @@ function lockScreen() {
    "these are the team's settings". The owner, on the Calendar as a team's
    tab (build 102): "the calendar is in a weird spot. The calendar is
    versatile and not tied to one team, not even one club, it is per person." */
-const TEAM_VIEWS = ['season', 'roster', 'practice', 'game', 'teamstats', 'minutes', 'attend'];
+const TEAM_VIEWS = ['season', 'roster', 'practice', 'game', 'teamstats', 'minutes', 'attend', 'teamsetup'];
 // Season's own screens (build 146): Stats, Minutes and Attendance, each a row on it, Back going to it
 const SEASON_VIEWS = ['teamstats', 'minutes', 'attend'];
 const viewScope = (v = ui.view) => v === 'calendar' || v === 'mine' ? (me ? 'me' : 'club')
@@ -8107,7 +8116,7 @@ const viewScope = (v = ui.view) => v === 'calendar' || v === 'mine' ? (me ? 'me'
 const VIEW_TITLE = {
   calendar: 'Calendar', setup: 'Settings', people: 'People', admin: 'Club details', sessions: 'Sessions',
   scheduler: 'Scheduler', inbox: 'Messages', thread: 'Messages', notes: 'What\'s new', mine: 'My players', formation: 'Shapes',
-  games: 'Games', regs: 'Registration', tryout: 'Tryouts', comply: 'Coach compliance', club: 'Club home', shome: 'Home', guide: 'How to'
+  games: 'Games', regs: 'Registrations', tryout: 'Tryouts', comply: 'Coach compliance', club: 'Club home', shome: 'Home', guide: 'How to', notify: 'Notifications'
 };
 // the Sessions view draws three of Settings' screens too, each under its own name
 const screenTitle = v => v === 'sessions' && sessSetTab() ? SESS_SET[sessSetTab()] : VIEW_TITLE[v];
@@ -8264,7 +8273,8 @@ const homeView = () => navKind() === 'family' ? 'season' : navTeams().length > 1
    history). A tab's own screen has no up. */
 function upView(v = ui.view) {
   if (v === 'game') return ui.gameFrom === 'calendar' ? 'calendar' : ui.gameFrom === 'games' ? 'games' : 'season';
-  if (v === 'formation') return ui.editFid === GAME_SHAPE ? 'game' : 'setup';
+  if (v === 'formation') return ui.editFid === GAME_SHAPE ? 'game' : 'teamsetup';
+  if (v === 'teamsetup' || v === 'notify') return 'setup';
   if (v === 'thread') return 'inbox';
   if (SEASON_VIEWS.includes(v)) return 'season';
   /* A screen with a list and one of its items open goes back to the list
@@ -8344,7 +8354,10 @@ function titleBar() {
   /* The switch to the other door (DOORS.md): at the end of the row, its icon
      and its name, for whoever has both doors; nothing for whoever has one. */
   const other = curDoor() === 'sessions' ? 'teams' : 'sessions';
-  const door = hasDoor('sessions') && hasDoor('teams') ? `<button class="tbdoor" data-act="door" data-d="${other}" aria-label="Switch to ${DOORS[other]}" title="Switch to ${DOORS[other]}">${DOOR_ICON[other]}<span>${DOORS[other]}</span></button>` : '';
+  /* It names the door she is in, with a chevron, and a tap switches: named
+     for the other door it read as a label for where she was (UX-REVIEW-4.md, 29). */
+  const cur = curDoor() === 'sessions' ? 'sessions' : 'teams';
+  const door = hasDoor('sessions') && hasDoor('teams') ? `<button class="tbdoor" data-act="door" data-d="${other}" aria-label="In ${DOORS[cur]}: switch to ${DOORS[other]}" title="Switch to ${DOORS[other]}">${DOOR_ICON[cur]}<span>${DOORS[cur]}</span><span class="chev" aria-hidden="true">▾</span></button>` : '';
   return `${back}<div class="tbmain">${main}</div>${door}`;
 }
 function tabBar() {
@@ -8363,7 +8376,9 @@ function tabBar() {
 function settingsLine() {
   const coachAny = !!me && teams().some(t => isCoach(t.id, me.uid));   // People, on Settings
   // the same line in both doors and on the account sheet; Settings itself draws the club's rows for the door she is in
-  return ['You', team() && restricted() !== 'tracker' && !readerRole(restricted()) ? 'this team' : '', canAdmin() ? 'the club: people, fields, teams and sessions' : coachAny ? 'people' : ''].filter(Boolean).join(', ');
+  const setsTeams = !!me && teams().some(t => canEditTeam(t.id) && !readerRole(roleIn(t.id, me.uid)) && roleIn(t.id, me.uid) !== 'tracker');
+  const line = [canAdmin() ? 'the club: people, fields, teams and sessions' : coachAny ? 'people' : '', setsTeams ? (canAdmin() ? 'the teams' : 'your team') : '', 'you'].filter(Boolean).join(', ');
+  return line.charAt(0).toUpperCase() + line.slice(1);
 }
 /* The other door, as a row on More and a button on the title row: the door
    she is not in, with its icon and name, for whoever has both (DOORS.md).
@@ -8390,7 +8405,7 @@ function sheetMore() {
     ${anyPlayers() && navKind() !== 'family' ? `<button class="opt" data-act="goview" data-v="mine"><b>My players</b>
       <span class="rowsub">${allKidNames().map(esc).join(', ')}</span></button>` : ''}
     ${inSess || !(canAdmin() && myTeams().length) ? '' : `<button class="opt" data-act="schedule"><b>All teams</b>
-      <span class="rowsub">Every team's calendar: this week, what is still to settle, and the Planner</span></button>`}
+      <span class="rowsub">Every team's calendar: this week, what is still to settle, and the Scheduler</span></button>`}
     ${inSess || !(canTrain() && (team() || myTeams().length)) ? '' : `<button class="opt" data-act="moredrills"><b>Drills</b>
       <span class="rowsub">The library, the club's and your own: look one up, change it, write a new one</span></button>`}
     ${inSess && canOffer() ? Object.entries(SESS_SET).map(([k, l]) => `<button class="opt" data-act="sesstab" data-k="${k}"><b>${l}</b>
@@ -8465,8 +8480,7 @@ function viewClub() {
     </button>`;
   }).join('')
       : `<div class="empty"><strong>No teams yet</strong>${canAdmin() ? 'Add the first one below.' : 'Nothing has been shared with your account.'}</div>`}
-    ${canAdmin() ? `<button class="btn quiet wide" data-act="newteam">Add a team</button>
-    <button class="btn quiet wide" data-act="goview" data-v="setup">Settings</button>` : ''}
+    ${canAdmin() ? `<button class="btn quiet wide" data-act="newteam">Add a team</button>` : ''}
   </div>`;
 }
 
@@ -12583,7 +12597,7 @@ function viewRoster() {
   }).join('') ||
     `<div class="empty"><strong>No players yet</strong>${ro ? "The team's coach adds the squad." : 'Add the squad once; every game reuses it.'}</div>`;
   // a tracker logs games for the squad; the team's set-up is the coaches', on Settings since build 143
-  const setUp = restricted() === 'tracker' ? '' : `<div class="card setcard"><div class="plist">${setRow('goview', 'Team settings', ro ? 'Shapes, what to count and links for families: read only' : 'Name and crest, shapes, what to count, links for families', ' data-v="setup"')}</div></div>`;
+  const setUp = restricted() === 'tracker' ? '' : `<div class="card setcard"><div class="plist">${setRow('teamsetup', 'Team settings', ro ? 'Shapes, what to count and links for families: read only' : 'Name and crest, shapes, what to count, links for families', ` data-id="${t.id}"`)}</div></div>`;
   /* The players are what she came for (the owner, 2026-10-25: *all the UIs
      need prettied*): the team as a banner, then the list in one card, then
      adding a player and the team link for parents, which are done once. */
@@ -19065,6 +19079,7 @@ const SET_ICON = {
   test: SI('<path d="M9.5 3.5h5M10.5 3.5v6L5 19a1.3 1.3 0 0 0 1.1 2h11.8a1.3 1.3 0 0 0 1.1-2l-5.5-9.5v-6"/><path d="M7.5 15h9"/>'),
   peek: SI('<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>'),
   about: SI('<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5M12 7.8v.2"/>'),
+  bell: SI('<path d="M6.5 16.5V11a5.5 5.5 0 0 1 11 0v5.5l1.5 2h-14z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>'),
   howto: SI('<path d="M12 6.5c-1.6-1.4-3.8-2-7.5-2v13c3.7 0 5.9.6 7.5 2 1.6-1.4 3.8-2 7.5-2v-13c-3.7 0-5.9.6-7.5 2z"/><path d="M12 6.5v13"/>'),
   crest: SI('<path d="M8.5 3.5 4 6l1.5 4.5L7.5 10v10.5h9V10l2 .5L20 6l-4.5-2.5c-.5 1.6-1.9 2.5-3.5 2.5s-3-.9-3.5-2.5z"/>'),
   shapes: SI('<circle cx="12" cy="5.5" r="1.8"/><circle cx="6" cy="11" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="18" cy="11" r="1.8"/><circle cx="8.5" cy="18" r="1.8"/><circle cx="15.5" cy="18" r="1.8"/>'),
@@ -19086,7 +19101,6 @@ const setGroup = (head, sub, tiles, cls = '') => {
 
 function viewSetup() {
   const code = wsCode();
-  const cfgOk = !!fbConfig().apiKey;
   const r = myRole();
   const adm = canAdmin();
   const coachAny = !!me && teams().some(t => isCoach(t.id, me.uid));
@@ -19100,8 +19114,8 @@ function viewSetup() {
     ${adm ? `<button class="btn quiet wide" data-act="adoptlocal">Add them to the club</button>`
       : '<p class="muted" style="margin-bottom:0">A club admin can add them to the club, signed in on this phone.</p>'}</div>` : '';
 
-  /* Who she is, as a card of its own at the top: her picture or initials,
-     her name, and her role in this club. A tap opens the account sheet. */
+  /* Who she is, as a card of its own: her picture or initials, her name,
+     and her role in this club. A tap opens the account sheet. */
   // her role on the team open, or else on a team she has one on: "No role here yet" told a coach looking at another team she had none
   const elseT = !r && me ? teams().find(x => roleIn(x.id, me.uid)) : null;
   const roleLine = r ? ROLE_LABEL[r] + (r !== 'owner' && r !== 'admin' && team() ? ' · ' + team().name : '')
@@ -19111,71 +19125,69 @@ function viewSetup() {
       <span class="settxt"><b>${esc(me.name || me.email || 'You')}</b>${me.email ? `<span class="setsub">${esc(me.email)}</span>` : ''}<span class="setsub">${esc(roleLine)}</span>${code ? `<span class="setsub">${esc(clubName())}</span>` : ''}</span></button>`
     : `<button class="card go sethero" type="button" data-act="signinsheet"><span class="setavatar">?</span>
       <span class="settxt"><b>Sign in</b><span class="setsub">Signed out, everything stays on this device. Sign in to share it with your club.</span></span></button>`;
-  const you = `<section class="setgroup"><h2 class="sechead">You</h2>${hero}${canTrain() ? `<button class="card go setswitch quiet" type="button" data-act="mydrills"><span class="seticon">${SET_ICON.mydrills}</span>
+  /* The switches are a screen of their own (UX-REVIEW-4.md, 24): on this page
+     they were two cards of prose and eight pills, longer than the club's
+     whole section, and a door to nothing. One tile says where they stand. */
+  const notifyTile = me ? `<button class="card go setswitch quiet" type="button" data-act="goview" data-v="notify"><span class="seticon">${SET_ICON.bell}</span>
+      <span class="settxt"><b>Notifications</b><span class="setsub">${esc(notifyLine())}</span></span></button>` : '';
+  const you = `<section class="setgroup"><h2 class="sechead">You</h2>${hero}${notifyTile}${canTrain() ? `<button class="card go setswitch quiet" type="button" data-act="mydrills"><span class="seticon">${SET_ICON.mydrills}</span>
       <span class="settxt"><b>My drills</b><span class="setsub">Your own drills and templates, on every phone you sign in on</span></span></button>` : ''}<button class="card go setswitch quiet" type="button" data-act="howto"><span class="seticon">${SET_ICON.howto}</span>
       <span class="settxt"><b>How to use ${APP_NAME}</b><span class="setsub">Step by step, picked for what you do here</span></span></button></section>`;
-  // the switches, here and nowhere else (UX-REVIEW-2.md, 6.2); What's new has a gear to them
-  const notify = me ? `<section class="setgroup"><h2 class="sechead" id="setNotify">Notifications</h2><p class="secsub">What reaches this phone, and what waits for you to look</p>${notifyCards()}</section>` : '';
 
-  // the team on screen, for whoever could read its set-up on Squad before: never a tracker or a family
-  const t = team(), lim = restricted();
-  // a team's set-up is the season's: not drawn while she is in Sessions
-  const teamRows = t && lim !== 'tracker' && !readerRole(lim) && curDoor() !== 'sessions' ? teamSetUp(t, !canEditTeam(t.id)) : [];
-  const team_ = teamRows.length ? setGroup(`This team · ${teamLabel(t)}`, canEditTeam(t.id) ? 'How the team looks, plays and is tracked' : 'Read only: its coaches change it', teamRows) : '';
+  /* The teams she may set up, a tile each, every one opening the one team
+     editor (UX-REVIEW-4.md, 25): name and crest, shapes, what to count and
+     the links for families were under "This team", which was whichever team
+     she had looked at last, while Club details edited the other half. */
+  const mine = teams().filter(t => canEditTeam(t.id) && !readerRole(roleIn(t.id, me && me.uid)) && roleIn(t.id, me && me.uid) !== 'tracker');
+  const teamTile = t => setTile('teamsetup', 'crest', teamLabel(t), [teamUAge(t) != null ? uLabel(teamUAge(t)) : '', `${players(t).length} player${players(t).length === 1 ? '' : 's'}`, coachesOf(t.id).map(coachName).filter(Boolean).join(', ') || 'no coach yet'].filter(Boolean).join(' · '), ` data-id="${t.id}"`);
+  const teamsSec = mine.length ? setGroup('Teams', 'Each team\'s name and crest, shapes, what to count, and the links for its families', mine.map(teamTile)) : '';
 
-  /* The club's rows are the door's (the owner, 2026-10-25: Settings was
-     getting too thick to take in). Teams is the season: its teams, games,
-     the Scheduler and who coaches them. Sessions is the business: the 1-1s
-     and groups, what families owe, the coaches' hours and registration,
-     which a season does without (a coach adds her players and lets their
-     families in by email). Fields and permits are both doors', and People,
-     Club details and the bulk import the club's own; the other door's are
-     one tap away, at the foot, for whoever has both. */
+  /* The club's tiles, in one section (UX-REVIEW-4.md, 23 and 29): the
+     season's under one small heading and the business's under another for
+     whoever has both doors, rather than half the club on each door's
+     Settings with a card at the foot to the other half. The thickness that
+     split was meant to cure was the prose and the switches above the tiles,
+     which are gone; the tiles themselves are the short part. */
   const inSess = curDoor() === 'sessions';
   const offer = canOffer() && (adm || coachAny || (!!me && coachesSessions(me.uid)));
   const fieldsTile = setTile('sesstab', 'fields', 'Fields and permits', fieldList().length ? `${fieldList().length} field${fieldList().length === 1 ? '' : 's'}, their permits and hours` : adm ? 'Where the club trains, and the permits for each' : 'Where the club trains', ' data-k="fields"');
   const shared = [
-    adm ? setTile('goview', 'club', 'Club details', 'Name and badge, what parents see, teams, who owns it', ' data-v="admin"') : '',
+    adm ? setTile('goview', 'club', 'Club details', 'Name and badge, what parents see, who owns it', ' data-v="admin"') : '',
     adm || coachAny ? setTile('goview', 'people', 'People', adm ? `${members().length} signed in · roles and invites` : 'Who is in the club, roles and invites', ' data-v="people"') : ''
   ];
-  const clubTiles = inSess ? [
-    ...shared,
-    adm ? setTile('goview', 'regs', 'Registrations', (k => k ? `${k} program${k === 1 ? '' : 's'}, their links, waivers and who has registered` : 'Programs families register for, with their links and waivers')(programsAll().length), ' data-v="regs"') : '',
-    // the sessions' set-up, off the Sessions screen since build 148 (UX-REVIEW-2.md, 7.3): a coach reads fields, and her own fees and hours
-    offer ? fieldsTile : '',
-    offer ? setTile('sesstab', 'fees', 'Session fees', adm ? 'What each family owes for 1-1s and groups, and what is paid' : 'What families owe for your sessions, and what is paid', ' data-k="fees"') : '',
-    offer ? setTile('sesstab', 'hours', 'Coach hours', adm ? 'Sessions run by each coach this month, and pay' : 'Sessions you ran this month, and pay', ' data-k="hours"') : '',
-    adm ? setTile('bulkimport', 'import', 'Bulk import', 'Sessions, bookings and fields from a spreadsheet or file') : ''
-  ] : [
-    ...shared,
+  const season = hasDoor('teams') ? [
     adm ? setTile('scheduler', 'sched', 'Scheduler', 'The week laid out by field, every team\'s practices, find a time, picture day')
       : coachAny ? setTile('scheduler', 'sched', 'Scheduler', 'Your teams\' practices on the club\'s fields, beside everyone else\'s') : '',
     adm || coachAny ? fieldsTile : '',
     adm ? setTile('goview', 'comply', 'Coach compliance', (x => x.length ? esc(x.map(([st, k]) => `${k} ${COMPLY_TALLY[st]}`).join(' · ')) : 'Everyone is up to date')(complyTally(complyRows())), ' data-v="comply"') : '',
     adm ? setTile('clubdrills', 'drills', "Club drills", (k => k ? `${k} drill${k === 1 ? '' : 's'} the club's coaches have shared` : 'What coaches share with the club, to tidy or remove')(shelfItems('club').length)) : '',
-    adm ? setTile('tpllist', 'tpl', "Club templates", (k => k ? `${k} session template${k === 1 ? '' : 's'}` : 'Practice plans the club keeps to start from')(tplItems('clubTpl').length), ' data-k="clubTpl"') : '',
-    adm ? setTile('bulkimport', 'import', 'Bulk import', 'Rosters, games, practices and fields from a spreadsheet or file') : ''
-  ];
-  // the other door's settings, for whoever has both doors and something there to set: a wide card of its own, in the door's icon
-  const both = hasDoor('teams') && hasDoor('sessions');
-  const other = inSess ? 'teams' : 'sessions';
-  const otherHas = inSess ? adm || coachAny : offer;
-  const otherCard = code && both && otherHas
-    ? `<button class="card go setswitch" type="button" data-act="door" data-d="${other}" data-v="setup"><span class="seticon">${DOOR_ICON[other]}</span>
-      <span class="settxt"><b>${DOORS[other]} settings</b><span class="setsub">${inSess ? 'Teams, the Scheduler, compliance, the club\'s drills' : (adm ? 'Registrations, ' : '') + 'session fees, coach hours'}</span></span></button>` : '';
+    adm ? setTile('tpllist', 'tpl', "Club templates", (k => k ? `${k} session template${k === 1 ? '' : 's'}` : 'Practice plans the club keeps to start from')(tplItems('clubTpl').length), ' data-k="clubTpl"') : ''
+  ] : [];
+  const business = hasDoor('sessions') ? [
+    adm ? setTile('goview', 'regs', 'Registrations', (k => k ? `${k} program${k === 1 ? '' : 's'}, their links, waivers and who has registered` : 'Programs families register for, with their links and waivers')(programsAll().length), ' data-v="regs"') : '',
+    // the sessions' set-up, off the Sessions screen since build 148 (UX-REVIEW-2.md, 7.3): a coach reads fields, and her own fees and hours
+    offer && !season.some(Boolean) ? fieldsTile : '',
+    offer ? setTile('sesstab', 'fees', 'Session fees', (adm ? 'What each family owes for 1-1s and groups, and what is paid' : 'What families owe for your sessions, and what is paid') + (adm ? ` · receipts ${feeMailOn() ? 'on' : 'off'}` : ''), ' data-k="fees"') : '',
+    offer ? setTile('sesstab', 'hours', 'Coach hours', adm ? 'Sessions run by each coach this month, and pay' : 'Sessions you ran this month, and pay', ' data-k="hours"') : ''
+  ] : [];
+  const importTile = adm ? setTile('bulkimport', 'import', 'Bulk import', 'Rosters, games, practices, sessions and fields from a spreadsheet or file') : '';
+  const grid = xs => { const ys = xs.filter(Boolean); return ys.length ? `<div class="setgrid">${ys.join('')}</div>` : ''; };
+  const both = season.some(Boolean) && business.some(Boolean);
   const noClub = code ? [] : [
     Object.keys(myClubs || {}).length ? setTile('clubswitch', 'clubs', 'Your clubs', 'Open a club you are in') : '',
     canNewClub() ? setTile('newclub', 'plus', 'Start a new club', 'You become its admin') : '',
     setTileInfo('club', 'Not in a club on this phone yet', 'Open the invite link a club admin sent you, or start one.')
   ];
-  const clubSub = !code ? '' : !both ? '' : inSess ? 'The business: 1-1s and groups, registration, fees and hours' : 'The season: teams, games, practices and the fields they use';
-  const club = setGroup(code && both ? `Club · ${DOORS[inSess ? 'sessions' : 'teams']}` : 'Club', clubSub, [...clubTiles, ...noClub]) + otherCard;
+  const clubBody = both
+    ? grid(shared) + `<h3 class="setsubhead">The season</h3>` + grid(season) + `<h3 class="setsubhead">The business</h3>` + grid([...business, importTile])
+    : grid([...shared, ...season, ...business, importTile, ...noClub]);
+  const club = clubBody ? `<section class="setgroup"><h2 class="sechead">Club</h2>${both ? '<p class="secsub">The season: teams, games and the fields they use. The business: 1-1s and groups, registration, fees and hours.</p>' : ''}${clubBody}</section>` : '';
 
-  const crosses = adm ? readiness().filter(x => !x.ok).length : 0;
   // what nobody needs at a game, and only the people who use it see it
+  const crosses = adm ? readiness().filter(x => !x.ok && x.mine !== false).length : 0;
   const adv = setGroup('Advanced', '', [
     adm ? setTile('backupsheet', 'backup', 'Backup', "Download a copy of the club, or load one from a file") : '',
-    adm ? setTile('readysheet', 'ready', 'Check readiness', crosses ? `${crosses} thing${crosses === 1 ? '' : 's'} to fix` : 'Everything the rules need is in place') : '',
+    adm ? setTile('readysheet', 'ready', 'Check readiness', crosses ? `${crosses} thing${crosses === 1 ? '' : 's'} to fix` : 'Everything is in place') : '',
     isOwner() ? setTile('envsheet', 'db', 'Database to use', esc(envName() || 'production')) : '',
     isOwner() ? setTile('maketestclub', 'test', 'Make a test club', 'Invented data, publishing off: safe to take apart') : '',
     isOwner() ? setTile('peeklib', 'peek', "Look at someone's drills", 'For support; nothing is kept') : ''
@@ -19186,7 +19198,45 @@ function viewSetup() {
   const about = `<section class="setgroup"><h2 class="sechead">About</h2><button class="card go setswitch quiet" type="button" data-act="aboutsheet"><span class="seticon">${SET_ICON.about}</span>
     <span class="settxt"><b>${APP_NAME} · v${BUILD}</b><span class="setsub">${stale() ? 'An older copy of this page: open it to reload' : 'Version, connection, and your account id for support'}</span></span></button></section>`;
 
-  return `<div class="stack setstack">${pend}${old}${you}${notify}${team_}${club}${adv}${about}</div>`;
+  /* The club and the teams first for whoever has them (UX-REVIEW-4.md, 23):
+     an admin opens Settings for People or a field, and they began on the
+     third screenful, under her own card and the switches. */
+  return `<div class="stack setstack">${pend}${old}${club}${teamsSec}${you}${adv}${about}</div>`;
+}
+/* One team's set-up, from Settings → Teams, Club details → Teams and
+   Players (UX-REVIEW-4.md, 25): what Settings' "This team" held, for the
+   team on screen, and what Club details' Edit held, on one screen for the
+   team she picked. */
+function viewTeamSetup() {
+  const t = team(); if (!t) return '';
+  const ro = !canEditTeam(t.id);
+  const cs = coachesOf(t.id).map(coachName).filter(Boolean);
+  const age = teamUAge(t) != null ? `${uLabel(teamUAge(t))} this season` : 'No age group set';
+  return `<div class="stack setstack">
+    <section class="setgroup"><h2 class="sechead">${esc(teamLabel(t))}</h2>
+      <p class="secsub">${esc([age, teamStats(t), cs.length ? 'Coached by ' + wordsAnd(cs) : 'No coach yet'].join(' · '))}</p>
+      <div class="setgrid">${teamSetUp(t, ro).join('')}${canAdmin() ? setTile('goview', 'people', 'Coaches and trackers', cs.length ? wordsAnd(cs) : 'Nobody yet · give someone the role on People', ' data-v="people"') : ''}</div></section>
+    ${ro ? '' : `<p style="margin:4px 0 0"><button class="linkbtn danger" type="button" data-act="delteam" data-id="${t.id}">Delete this team and its games</button></p>`}
+  </div>`;
+}
+/* Settings → Notifications: the one place the switches are (UX-REVIEW-2.md,
+   6.2), a screen of its own since UX-REVIEW-4.md, 24. Push where the club
+   offers it, else the open-page pop-ups, which ask the browser for the same
+   permission; then what notifies her, one switch a row. */
+function viewNotify() {
+  if (!me) return '';
+  return `<div class="stack"><h2>Notifications</h2>
+    <p class="muted" style="margin-top:-6px">What reaches this phone, and what waits for you to look.</p>
+    ${notifyCards()}</div>`;
+}
+// where her notifications stand, in one line, on the Settings tile
+function notifyLine() {
+  const sup = pushSupport(), on = pushOn();
+  const kinds = MUTE_KINDS.filter(([k]) => k === 'news' ? newsFor() : true);
+  const off = kinds.filter(([k]) => muted(k)).length;
+  const phone = sup === 'ok' ? (on ? 'On for this phone' : 'Off for this phone') : sup === 'blocked' ? 'Blocked on this phone' : sup === 'install' ? 'Add to the Home Screen first' : '';
+  const what = off ? `${kinds.length - off} of ${kinds.length} kinds on` : 'messages, notices, games and club activity';
+  return [phone, what].filter(Boolean).join(' · ');
 }
 /* Settings → About, and the badge when nothing is waiting: the version, what
    the badge says and why, and the account id. The connection reads `online`,
@@ -19220,7 +19270,7 @@ function sheetReadiness() {
     <div class="plist">${readiness().map(r => `<div class="prow" style="grid-template-columns:auto 1fr auto">
       <span class="pnum">${r.ok ? '✓' : '✗'}</span>
       <span><span class="pname">${esc(r.label)}</span><span class="psub">${esc(r.detail)}</span></span>
-      <span class="muted">${r.ok ? '' : 'fix'}</span></div>`).join('')}</div>
+      <span class="muted">${r.ok ? '' : r.mine === false ? 'not yours' : 'fix'}</span></div>`).join('')}</div>
     <div style="margin-top:10px"><button class="btn quiet wide" data-act="preplockdown">Set up what is missing</button></div>
     <p class="muted" style="margin-bottom:0">Writes what the rules read for every team that has a coach or tracker, and for every published share. The rules check it, so this has to run, and reach the club, <b>before</b> you paste them.</p>`);
 }
@@ -19271,10 +19321,6 @@ function viewAdmin() {
         ${code === wsCode() ? '<span class="muted">open now</span>'
       : `<button class="btn quiet sm" data-act="switchclub" data-code="${esc(code)}">Open</button>`}</div>`).join('')}</div></div>` : ''}
 
-    <div class="card"><h2 style="margin-bottom:8px">Retire this club</h2>
-      <p class="muted" style="margin-top:0">Marks it closed. Every device holding a copy clears it on next connect — except the app owner's, so it can still be opened and exported. <b>Nothing is deleted.</b> The data stays until the app owner removes it for good, outside the app.</p>
-      <button class="btn danger wide" data-act="retireclub">Retire ${esc((acc().org || {}).name || 'this club')}</button></div>
-
     <div class="card"><h2 style="margin-bottom:8px">Who runs it</h2>
       ${nAdmins ? `<p class="muted" style="margin-top:0">${members().length} signed in · ${nAdmins} admin${nAdmins === 1 ? '' : 's'}. Roles and invites are on Settings → People.</p>
         ${ownerCard()}`
@@ -19284,14 +19330,23 @@ function viewAdmin() {
       <p class="muted" style="margin-bottom:0">Parents are not assigned here — they become one by being linked to a player.</p></div>
 
     <div class="card"><h2 style="margin-bottom:8px">Teams</h2>
-      <div class="plist">${teams().map(t => `<button class="prow go" type="button" data-act="editteam" data-id="${t.id}" style="grid-template-columns:auto 1fr auto">
+      <div class="plist">${teams().map(t => `<button class="prow go" type="button" data-act="teamsetup" data-id="${t.id}" style="grid-template-columns:auto 1fr auto">
         ${t.logo ? `<img class="crest sm" src="${esc(t.logo)}" alt="">` : '<span class="pnum">—</span>'}
         <span><span class="pname">${teamLabel(t)}</span><span class="rowsub">${teamStats(t)}</span></span>
-        <span class="muted">Edit</span></button>`).join('') || '<p class="muted" style="margin:0">No teams yet.</p>'}</div>
+        <span class="muted">Set up</span></button>`).join('') || '<p class="muted" style="margin:0">No teams yet.</p>'}</div>
       <div style="margin-top:10px"><button class="btn quiet wide" data-act="newteam">Add a team</button></div></div>
 
     ${aiButton('club')}
+    <p style="margin:4px 0 0"><button class="linkbtn danger" type="button" data-act="retiresheet">Retire this club…</button></p>
   </div>`;
+}
+/* The one irreversible thing on Club details, last and behind a sheet
+   (UX-REVIEW-4.md, 27): it sat in the middle of the screen, above the teams. */
+function sheetRetire() {
+  if (!canAdmin()) { toast('Club admins only'); return; }
+  openSheet(`<h3>Retire this club</h3>
+    <p class="muted" style="margin-top:0">Marks it closed. Every device holding a copy clears it on next connect — except the app owner's, so it can still be opened and exported. <b>Nothing is deleted.</b> The data stays until the app owner removes it for good, outside the app.</p>
+    <button class="btn danger wide" data-act="retireclub">Retire ${esc((acc().org || {}).name || 'this club')}</button>`);
 }
 
 /* ---------------- coaches' time off ---------------- */
@@ -22000,9 +22055,10 @@ function viewPeople() {
       : all.filter(m2 => m2.rs.some(v => v.r === F));
 
   const sortKey = ui.peopleSort || 'name';
+  // by name puts whoever has none last, not first under "Unnamed" (UX-REVIEW-4.md, 28)
   shown.sort((a, b) => sortKey === 'joined'
     ? (b.u.at || 0) - (a.u.at || 0)
-    : (a.u.name || '').localeCompare(b.u.name || ''));
+    : (!a.u.name) - (!b.u.name) || (a.u.name || '').localeCompare(b.u.name || ''));
 
   const when = ms => ms ? new Date(ms).toLocaleDateString() : 'unknown';
 
@@ -22010,6 +22066,8 @@ function viewPeople() {
     <div class="spread"><h2>People</h2>
       <button class="btn quiet sm" data-act="peoplesort">${sortKey === 'joined' ? 'By join date' : 'By name'}</button></div>
     <p class="muted" style="margin-top:-6px">${admin ? 'Every account in the club.' : `Accounts on ${esc(myCoachTeams.map(x => x.name).join(', '))}, and anyone new waiting for a role.`}</p>
+
+    ${invitesCard()}
 
     ${counts.pending && F !== 'pending' ? `<div class="warn alert"><div class="spread">
       <span><b>${counts.pending} waiting to be let in.</b> They signed in but have no role, so they see nothing yet.</span>
@@ -22023,11 +22081,11 @@ function viewPeople() {
     <div class="tablewrap people"><table class="grid">
       <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Joined</th><th></th></tr></thead>
       <tbody>${shown.map(({ u, rs, none }) => `<tr data-act="personrow" data-uid="${u.uid}">
-        <td><b>${esc(u.name || 'Unnamed')}</b>${me && me.uid === u.uid ? ' <span class="muted">you</span>' : ''}</td>
+        <td><b>${esc(u.name || 'No name yet')}</b>${me && me.uid === u.uid ? ' <span class="muted">you</span>' : ''}</td>
         <td class="dim">${esc(u.email || '')}</td>
         <td>${isAdmin(u.uid) ? '<span class="tag admin">Admin</span>'
       : rs.length ? roleTags(u.uid, scope) : '<span class="tag wait">Waiting</span>'}</td>
-        <td class="dim">${when(u.at)}</td>
+        <td class="dim">Joined ${when(u.at)}</td>
         <td class="right">${none
         ? `<button class="btn sm" data-act="personedit" data-uid="${u.uid}">Let in</button>`
         : `${coachesSessions(u.uid) || isAdmin(u.uid) ? `<button class="btn quiet sm" data-act="personcal" data-uid="${u.uid}">Calendar</button> ` : ''}<button class="btn quiet sm" data-act="personedit" data-uid="${u.uid}">Roles</button>`}</td>
@@ -22035,8 +22093,6 @@ function viewPeople() {
     </table></div>
 
     <p class="muted">Tap <b>Roles</b> on anyone to let them in — as a parent of a player, a tracker or a coach. Somebody who signs in on their own waits here with no role and sees nothing until you do.</p>
-
-    ${invitesCard()}
 
     ${admin ? `<div class="card"><h2 style="margin-bottom:10px">Activity</h2>
       ${auditLog().length ? `<div class="log">${auditLog().slice(0, 30).map(e => `<div style="display:grid;grid-template-columns:1fr auto;gap:10px;padding:7px 0;border-top:1px solid var(--line)">
@@ -22406,12 +22462,34 @@ function sheetTeams() {
 /* `from` is where a new game was started: from the club schedule an admin is
    adding fixtures, so saving keeps her there instead of opening the game. */
 let matchFrom = null;
+/* The shapes a game can take, for the side picked: every preset for every
+   side was one list, 4-4-2 (11v11) offered on a 7v7 game (UX-REVIEW-4.md, 31).
+   The team's saved shapes stay whatever their size, since she saved them. */
+function shapeOptions(t, m, isNew, size) {
+  return `${isNew ? '<option value="auto" selected>Team default for this side size</option>'
+    : `<option value="keep" selected>Keep ${esc(m.formation ? m.formation.name : 'no shape')}</option>`}
+      <option value="none">No shape — place them anywhere</option>
+      <option value="custom">Build my own for this game…</option>
+      ${Object.values(t.formations || {}).map(f => `<option value="team:${f.id}">${esc(f.name)} (${f.size}v${f.size}, saved)</option>`).join('')}
+      ${Object.keys(presetsFor(Number(size))).map(k => `<option value="preset:${size}:${k}">${k} (${size}v${size})</option>`).join('')}`;
+}
+// the coming Saturday as a date string; today when it is one
+function nextSaturday() {
+  const d = new Date(todayStr() + 'T12:00:00');
+  d.setDate(d.getDate() + ((6 - d.getDay() + 7) % 7));
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 function sheetMatch(m, pre, from) {
   const t = team();
   const isNew = !m;
   matchFrom = isNew ? from || null : null;
   // today as the coach's phone reads it; toISOString() is tomorrow by the evening in America
-  m = m || { periodCount: 2, periodMinutes: 40, onFieldCount: 11, date: todayStr(), ...(pre || {}) };
+  /* A new game's day is the coming Saturday, which most games are; today, a
+     Wednesday, never was. Its format is the team's last game's, so the folded
+     line says what the team plays, not 11 v 11 and forty minutes for a U10
+     (UX-REVIEW-4.md, 31). */
+  const last = teamMatches(t.id).filter(x => x.periodMinutes || x.onFieldCount).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))[0];
+  m = m || { periodCount: last && last.periodCount || 2, periodMinutes: last && last.periodMinutes || 40, onFieldCount: last && last.onFieldCount || 11, date: nextSaturday(), ...(pre || {}) };
   openSheet(`<h3>${isNew ? 'New game' : 'Game details'}</h3>
     <label class="field"><span>Opponent</span><input type="text" id="mOpp" value="${esc(m.opponent || '')}" placeholder="Riverside United"></label>
     <div class="grid2">
@@ -22423,14 +22501,18 @@ function sheetMatch(m, pre, from) {
       <label class="field"><span>Home or away</span><select id="mHome">
         <option value="">Not set</option>
         ${Object.entries(HOME_AWAY).map(([k, v]) => `<option value="${k}"${m.home === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
-      <label class="field"><span>Arrive by</span><input type="time" id="mArrive" value="${esc(m.arrive || '')}"></label>
-    </div>
-    <label class="field"><span>Kit</span><input type="text" id="mKit" value="${esc(m.kit || '')}" placeholder="Blue shirts, white socks"></label>
-    <label class="field"><span>Notes for families and the other team</span><textarea id="mNotes" rows="2" placeholder="Park on Elm Street, not in the school lot">${esc(m.notes || '')}</textarea></label>
-    <p class="muted" style="margin:-4px 0 12px">On the share pages and in the calendar. A player\u2019s name typed here is left off the share pages.</p>
+      </div>
     ${isNew ? '' : `<label class="field"><span>Is it on?</span><select id="mCalled">
       <option value="">On</option>
       ${Object.entries(CALLED).map(([k, v]) => `<option value="${k}"${m.called === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label>`}
+    <details class="fold"${isNew ? '' : ' open'}><summary>Arrive by, kit, notes and video</summary>
+    <label class="field"><span>Arrive by</span><input type="time" id="mArrive" value="${esc(m.arrive || '')}"></label>
+    <label class="field"><span>Kit</span><input type="text" id="mKit" value="${esc(m.kit || '')}" placeholder="Blue shirts, white socks"></label>
+    <label class="field"><span>Notes for families and the other team</span><textarea id="mNotes" rows="2" placeholder="Park on Elm Street, not in the school lot">${esc(m.notes || '')}</textarea></label>
+    <p class="muted" style="margin:-4px 0 12px">On the share pages and in the calendar. A player\u2019s name typed here is left off the share pages.</p>
+    <label class="field"><span>Veo link (optional)</span><input type="url" id="mVeo" value="${esc(m.veoUrl || '')}" placeholder="https://app.veo.co/matches/..."></label>
+    </details>
+    <details class="fold"${isNew && !pre ? '' : ' open'}><summary>Format: ${(m.onFieldCount || 11)} v ${(m.onFieldCount || 11)} · ${m.periodCount == 4 ? '4 × ' : '2 × '}${m.periodMinutes || 40} min · ${isNew ? 'the team\'s shape' : m.formation ? esc(m.formation.name) : 'no shape'}</summary>
     <div class="grid2">
       <label class="field"><span>Halves or quarters</span><select id="mCount">
         <option value="2"${(m.periodCount || 2) == 2 ? ' selected' : ''}>2 halves</option>
@@ -22439,18 +22521,15 @@ function sheetMatch(m, pre, from) {
     </div>
     <label class="field"><span>Players on the pitch</span><select id="mSide">
       ${[5, 7, 9, 11].map(n => `<option value="${n}"${(m.onFieldCount || 11) == n ? ' selected' : ''}>${n} v ${n}</option>`).join('')}</select></label>
-    <label class="field"><span>Shape</span><select id="mShape">
-      ${isNew ? '<option value="auto" selected>Team default for this side size</option>'
-        : `<option value="keep" selected>Keep ${esc(m.formation ? m.formation.name : 'no shape')}</option>`}
-      <option value="none">No shape — place them anywhere</option>
-      <option value="custom">Build my own for this game…</option>
-      ${Object.values(t.formations || {}).map(f => `<option value="team:${f.id}">${esc(f.name)} (${f.size}v${f.size}, saved)</option>`).join('')}
-      ${[11, 9, 7, 5].map(sz => Object.keys(presetsFor(sz)).map(k => `<option value="preset:${sz}:${k}">${k} (${sz}v${sz})</option>`).join('')).join('')}
-    </select></label>
+    <label class="field"><span>Shape</span><select id="mShape">${shapeOptions(t, m, isNew, m.onFieldCount || 11)}</select></label>
     <p class="muted" style="margin:-4px 0 12px">Copied into this game when you save. Editing the team shape later will not touch it.</p>
-    <label class="field"><span>Veo link (optional)</span><input type="url" id="mVeo" value="${esc(m.veoUrl || '')}" placeholder="https://app.veo.co/matches/..."></label>
+    </details>
     <button class="btn wide" data-act="savematch" data-id="${m.id || ''}">${isNew ? 'Create game' : 'Save changes'}</button>
     ${isNew ? '' : `<div style="margin-top:8px"><button class="btn danger wide" data-act="delmatch" data-id="${m.id}">Delete this game</button></div>`}`);
+  try {
+    const side = document.getElementById('mSide'), shape = document.getElementById('mShape');
+    if (side && shape && side.addEventListener) side.addEventListener('change', () => { shape.innerHTML = shapeOptions(t, m, isNew, side.value); });
+  } catch (e) { }
 }
 
 function sheetPlanned() {
@@ -22859,7 +22938,6 @@ function viewRegs() {
   staffCareFetch();
   return `<div class="stack">
     <h2>Registrations</h2>
-    ${detailsCard()}
     <p class="muted" style="margin-top:0">What families register their children for: a season, a camp, tryouts, training sessions. Each open program has a link to post wherever families will see it. Fees are shown, not taken; families pay the way you tell them.</p>
     ${programsAll().map(p => {
     const rs = Object.values(regsOf(p.id)), waiting = rs.filter(r => r && r.st === 'sent').length;
@@ -22868,6 +22946,7 @@ function viewRegs() {
       <span class="rowsub">${rs.length} registered${waiting ? ` · ${waiting} waiting for you` : ''}</span></button>`;
   }).join('') || '<div class="empty"><strong>No programs yet</strong>Make one, add its waivers, and post its link.</div>'}
     <button class="btn wide" data-act="progedit">New program</button>
+    ${detailsCard()}
     <div class="card"><h2 style="margin-bottom:8px">Waivers</h2>
       <p class="muted" style="margin-top:0">The club's own words. A family agrees in her own name; change the words and the next registration asks again.</p>
       <div class="plist">${waiversAll().map(w => `<button class="prow go" type="button" data-act="waiveredit" data-id="${esc(w.id)}" style="grid-template-columns:1fr auto">
@@ -23230,7 +23309,7 @@ function viewComply() {
   const teamsOf = u => Object.entries(acc().teams || {}).filter(([, ta]) => ((ta || {}).coaches || {})[u] || ((ta || {}).helpers || {})[u]).map(([tid]) => (state.teams[tid] || {}).name).filter(Boolean);
   return `<div class="stack">
     <h2>Coach compliance</h2>
-    <p class="muted" style="margin-top:0">What MSYSA asks of every head coach, assistant coach and admin, in its order: SafeSport, concussion training, then the background check. The checks are done through GotSport; this is the club's record of them. ${t.length ? esc(t.map(([st, n]) => `${n} ${COMPLY_TALLY[st]}`).join(' · ')) + '.' : 'Everyone is up to date.'} Flagged here and to the person, and nothing else changes.</p>
+    <p class="muted" style="margin-top:0">What the state association asks of every head coach, assistant coach and admin, in its order: SafeSport, concussion training, then the background check. The checks are done where the association runs them; this is the club's record of them. ${t.length ? esc(t.map(([st, n]) => `${n} ${COMPLY_TALLY[st]}`).join(' · ')) + '.' : 'Everyone is up to date.'} Flagged here and to the person, and nothing else changes.</p>
     <div class="plist">${rows.map(r => `<button class="prow go" type="button" data-act="complyopen" data-uid="${esc(r.uid)}" style="grid-template-columns:1fr auto">
       <span><span class="pname">${esc(r.name)}</span><span class="rowsub">${esc([teamsOf(r.uid).join(', ') || (isAdmin(r.uid) ? 'Admin' : ''), r.flags.map(complyLine).join('; ')].filter(Boolean).join(' · '))}</span></span>
       <span class="tag${r.worst < 3 ? ' wait' : ''}">${r.worst < 3 ? COMPLY_WORDS[r.flags.find(f => COMPLY_RANK[f.st] === r.worst).st] : 'up to date'}</span></button>`).join('') || '<p class="muted">No coaches yet.</p>'}</div>
@@ -24696,7 +24775,7 @@ function sheetTeam(t) {
     <label class="field"><span>Birth year</span><input type="number" inputmode="numeric" id="tBirth" value="${esc(t && t.birthYear ? String(t.birthYear) : '')}" placeholder="${seasonEndYear() - 11}"></label>
     <p class="muted" style="margin-top:-6px">The year most of the squad were born. It sets the age group, ${t && teamUAge(t) != null ? `${uLabel(teamUAge(t))} this season, ` : ''}which moves up by itself every August, and starts the drill library at the right age.</p>
     <button class="btn wide" data-act="saveteam" data-id="${t ? t.id : ''}">${t ? 'Save changes' : 'Create team'}</button>
-    ${t ? `<div style="margin-top:8px"><button class="btn danger wide" data-act="delteam" data-id="${t.id}">Delete this team and its games</button></div>` : ''}`);
+`);
 }
 
 /* ---------------- events ---------------- */
@@ -25188,11 +25267,9 @@ function onAct(e) {
   if (a === 'thread') { closeSheet(); ui.view = 'thread'; ui.thread = { tid: d.tid, fam: d.fam }; render(); return; }
   if (a === 'notes') { ui.view = 'notes'; ui.thread = null; closeSheet(); render(); return; }
   // What's new's gear: Settings, at its Notifications section
-  if (a === 'notifyset') {
-    ui.view = 'setup'; ui.thread = null; closeSheet(); render();
-    try { const el = document.getElementById('setNotify'); if (el && el.scrollIntoView) el.scrollIntoView({ block: 'start' }); } catch (e) { }
-    return;
-  }
+  if (a === 'notifyset') { ui.view = 'notify'; ui.thread = null; closeSheet(); render(); toTop(); return; }
+  // the phone's own steps for a blocked permission (UX-REVIEW-3.md, 17.4), in a sheet since UX-REVIEW-4.md, 24
+  if (a === 'pushhow') { openSheet(`<h3>Allow notifications</h3><p class="muted" style="margin-top:0">${pushBlockedSay()}</p>`); return; }
   if (a === 'msgnew') { sheetNewMsg(); return; }
   if (a === 'msgpick') {
     const u = pickUi();
@@ -25374,6 +25451,7 @@ function onAct(e) {
   if (a === 'teammenu') { sheetTeams(); return; }
   // How to: a topic, or with no topic the list (the role card, More, Settings → You and the screen's own rows)
   if (a === 'howto') { ui.howto = d.k || null; ui.view = 'guide'; closeSheet(); render(); toTop(); return; }
+  if (a === 'teamsetup') { if (d.id && state.teams[d.id]) ui.teamId = d.id; ui.view = 'teamsetup'; closeSheet(); render(); toTop(); return; }
   if (a === 'goview') {
     // Sessions opened from More or Club home is the sessions, not the Settings screen a last visit left it on
     if (d.v === 'sessions' && ui.sess && SESS_SET[ui.sess.tab]) ui.sess.tab = 'list';
@@ -25443,6 +25521,7 @@ function onAct(e) {
     closeSheet(); render(); toTop(); return;
   }
   if (a === 'accountsheet') { if (me) sheetAccount(); else sheetSignIn(); return; }
+  if (a === 'retiresheet') { sheetRetire(); return; }
   if (a === 'retireclub') {
     if (!canAdmin()) { toast('Club admins and the app owner only'); return; }
     if (hasClubOwner() && !(me && isClubOwner(me.uid))) { toast('Only the club owner can retire it'); return; }
@@ -26540,7 +26619,7 @@ function onAct(e) {
   if (a === 'editformation') { ui.editFid = d.id; ui.view = 'formation'; closeSheet(); render(); return; }
   if (a === 'backsetup') {
     if (ui.editFid === GAME_SHAPE) { ui.view = 'game'; ui.gameView = 'pitch'; }
-    else ui.view = 'setup';
+    else ui.view = 'teamsetup';
     ui.editFid = null; render(); return;
   }
   /* A game's own shape is part of running the game, so it takes the same
@@ -27140,7 +27219,7 @@ function onAct(e) {
 let tapped = false;
 {
   // a tap also calls off a landing still waiting on the club (landNow())
-  const mark = () => { tapped = true; landHome = false; setTimeout(() => { tapped = false; }, 0); };
+  const mark = () => { tapped = true; landHome = false; ui.fresh = false; setTimeout(() => { tapped = false; }, 0); };
   document.addEventListener('click', mark, true);
   document.addEventListener('change', mark, true);
 }
@@ -27262,8 +27341,8 @@ function uiToHash() {
      and no club, and says which calendars it shows, so a link, a reload and
      the back button bring back the same ones. */
   if (ui.view === 'calendar') return calSel() === 'club' && calSels().includes('mine') ? '#/calendar/all' : '#/calendar';
-  if (['practice', 'roster', 'season', ...SEASON_VIEWS].includes(ui.view) && t) {
-    const seg = { practice: 'practice', roster: 'squad', season: 'season', teamstats: 'stats', minutes: 'minutes', attend: 'attendance' }[ui.view];
+  if (['practice', 'roster', 'season', 'teamsetup', ...SEASON_VIEWS].includes(ui.view) && t) {
+    const seg = { practice: 'practice', roster: 'squad', season: 'season', teamstats: 'stats', minutes: 'minutes', attend: 'attendance', teamsetup: 'setup' }[ui.view];
     return `#/team/${t}/${seg}`;
   }
   if (ui.view === 'games') return '#/games';
@@ -27280,6 +27359,7 @@ function uiToHash() {
   if (ui.view === 'thread' && ui.thread && ui.thread.cid) return `#/messages/with/${sdOther(ui.thread.cid)}`;
   if (ui.view === 'thread' && ui.thread) return `#/messages/${ui.thread.tid}/${ui.thread.fam}`;
   if (ui.view === 'setup') return '#/settings';
+  if (ui.view === 'notify') return '#/settings/notifications';
   if (ui.view === 'guide') return '#/how-to' + (ui.howto ? '/' + ui.howto : '');
   if (ui.view === 'sessions') { const tb = (ui.sess || {}).tab; return '#/training' + (tb && tb !== 'list' && (SESS_TABS[tb] || SESS_SET[tb]) ? '/' + tb : ''); }
   // the Sessions door's Home (DOORS.md); #/training stays the list
@@ -27307,7 +27387,7 @@ function hashToUi() {
   }
   // #/notifications is its address from before build 148
   if (p[0] === 'whats-new' || p[0] === 'notifications') { ui.view = 'notes'; return true; }
-  if (p[0] === 'settings') { ui.view = 'setup'; return true; }
+  if (p[0] === 'settings') { ui.view = p[1] === 'notifications' ? 'notify' : 'setup'; return true; }
   // #/how-to/{topic}: a topic not hers, or none, lands on the list
   if (p[0] === 'how-to') { ui.view = 'guide'; ui.howto = p[1] && HOWTO.some(t => t.id === p[1]) ? p[1] : null; return true; }
   /* #/drill/{key} is a drill a coach sent. The screen stays where it was and
@@ -27341,6 +27421,7 @@ function hashToUi() {
       return true;
     }
     if (p[2] === 'shape' && p[3]) { ui.editFid = p[3]; ui.view = 'formation'; return true; }
+    if (p[2] === 'setup') { ui.view = 'teamsetup'; return true; }
     /* A team's calendar is the person's Calendar with that team on it (alerts
        and calendar files link here); its games were a tab of their own, and
        are its Season now, and its settings ("planning") are on Squad. */
@@ -27366,6 +27447,9 @@ function landNow() {
   if (!landHome) return;
   // the door she last stood in, or where she starts (DOORS.md): the screen being left behind does not decide it
   if (navKind() === 'family') { landHome = false; ui.door = ui.door && hasDoor(ui.door) ? ui.door : defaultDoor(); ui.view = ui.door === 'sessions' ? 'shome' : homeView(); ui.thread = null; return; }
+  // staff keep what was open last; a phone with nothing saved yet opened on the Calendar, the longest list in the app (UX-REVIEW-4.md, 30):
+  // Home, from the phone's copy at once or once the club has been read
+  if (ui.fresh && (wsRead || !fbConfig().apiKey || Object.keys(state.teams || {}).length)) { ui.fresh = false; ui.door = ui.door && hasDoor(ui.door) ? ui.door : defaultDoor(); ui.view = ui.door === 'sessions' ? 'shome' : homeView(); ui.thread = null; }
   // nothing more is coming to change her mind: no club to read, or it has been read
   if (wsRead || !fbConfig().apiKey) landHome = false;
 }

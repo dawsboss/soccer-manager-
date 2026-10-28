@@ -968,14 +968,14 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
   {
     const { A, b } = await boot('mum', { key: false });
     check('no push key for the club: nothing is offered', A.pushSupport(), 'unset');
-    A.ui.view = 'setup'; A.render();
+    A.ui.view = 'notify'; A.render();
     check('and Settings says nothing about it', A.rendered().includes('Notifications on this phone'), false);
     check('the worker is not even registered', b.registered.length, 0);
   }
   {
     const { A } = await boot('mum', { ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) Safari/604.1', noPush: true });
     check('an iPhone in a browser tab is told to add it to the Home Screen', A.pushSupport(), 'install');
-    A.ui.view = 'setup'; A.render();
+    A.ui.view = 'notify'; A.render();
     check('in so many words', A.rendered().includes('Add to Home Screen'), true);
     check('with nothing to tap that cannot work', A.rendered().includes('data-act="pushon"'), false);
   }
@@ -997,12 +997,17 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     ['a computer', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36', /lock icon beside the address/, /Home Screen|<b>Permissions<\/b>/]
   ]) {
     const { A } = await boot('mum', { perm: 'denied', ua });
-    A.ui.view = 'setup'; A.render();
+    A.ui.view = 'notify'; A.render();
     const html = A.rendered(), card = html.slice(html.indexOf('Notifications on this phone'), html.indexOf('What notifies you'));
-    check(`${name}: blocked, and the steps are its own`, A.pushSupport() + ' ' + where.test(card) + ' ' + notWhere.test(card), 'blocked true false');
-    check(`${name}: and what she gets once they are on`, /team notices, messages and changes to your games and practices will reach you even when TeamPlayHQ is closed/.test(card), true);
+    // the steps are behind one button since UX-REVIEW-4.md, 24: on the page they were sixty words before anything of the club
+    check(`${name}: blocked, said in a line with a button to the steps`, A.pushSupport() + ' ' + /turned off for TeamPlayHQ on this phone/.test(card) + ' ' + /data-act="pushhow"/.test(card), 'blocked true true');
+    A.click({ act: 'pushhow' });
+    const how = String(A.dom.node('#sheet').innerHTML);
+    check(`${name}: the steps are its own`, where.test(how) + ' ' + notWhere.test(how), 'true false');
+    check(`${name}: and what she gets once they are on`, /team notices, messages and changes to your games and practices will reach you even when TeamPlayHQ is closed/.test(how), true);
+    A.closeSheet();
     check(`${name}: nothing to tap that cannot work`, /data-act="pushon"/.test(card), false);
-    check(`${name}: nothing sends her to "this browser"`, /this browser/i.test(card), false);
+    check(`${name}: nothing sends her to "this browser"`, /this browser/i.test(card + how), false);
   }
   {
     const { A, fbk, b } = await boot(null);
@@ -1020,8 +1025,11 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     check('Messages offers nothing', /data-act="pushon"|Pop-ups on this device|What notifies you/.test(A.rendered()), false);
     A.ui.view = 'notes'; A.render();
     check('nor does What\'s new', /data-act="pushon"|What notifies you/.test(A.rendered()), false);
+    A.ui.view = 'notify'; A.render();
+    check('Settings → Notifications offers it', A.rendered().includes('data-act="pushon"'), true);
     A.ui.view = 'setup'; A.render();
-    check('Settings offers it', A.rendered().includes('data-act="pushon"'), true);
+    check('— and Settings itself one tile to it, saying it is off for this phone', /data-act="goview" data-v="notify"[\s\S]*?Off for this phone/.test(A.rendered()) && !/data-act="pushon"/.test(A.rendered()), true);
+    A.ui.view = 'notify'; A.render();
     check('instead of the open-page pop-ups', A.rendered().includes('Pop-ups on this device'), false);
     A.click({ act: 'pushon' }); await A.flush();
     check('the browser is asked, from the tap', b.asked, 1);
@@ -1034,8 +1042,8 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     check('kept on the phone as hers', A.pushRec.uid + ' ' + A.pushRec.token, 'mum ' + fbk.token);
     check('so it is on', A.pushOn(), true);
     check('the worker is told who is signed in', b.posted.some(m => m.type === 'me' && m.uid === 'mum'), true);
-    A.ui.view = 'setup'; A.render();
-    check('Settings says it is on, with a way off', A.rendered().includes('data-act="pushoff"'), true);
+    A.ui.view = 'notify'; A.render();
+    check('Settings → Notifications says it is on, with a way off', A.rendered().includes('data-act="pushoff"'), true);
     A.ui.view = 'inbox'; A.render();
     check('and Messages stops asking', A.rendered().includes('Notifications on this phone'), false);
 

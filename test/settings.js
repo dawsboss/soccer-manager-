@@ -76,34 +76,44 @@ console.log('--- the connection says what the badge says (UX-REVIEW-3.md, 14.4; 
 console.log('--- the sections, by whose they are ---');
 {
   let h = as('boss');
-  check('an admin: You, This team, Club, Advanced, About', heads(h), 'You · This team · Club · Advanced · About');
+  // the club and the teams first (UX-REVIEW-4.md, 23): an admin opens Settings for the club, and it began on the third screenful
+  check('an admin: Club, Teams, You, Advanced, About', heads(h), 'Club · Teams · You · Advanced · About');
   check('— titled Settings', A.rendered('#titlebar').includes('<span>Settings</span>'), true);
   let a = acts(h);
   // the Teams door's club rows (the owner, 2026-10-25); the Sessions door's are pinned in test/doors.js
-  for (const x of ['signinsheet', 'goview:admin', 'goview:people', 'goview:comply', 'scheduler', 'sesstab:fields', 'clubdrills', 'tpllist:clubTpl', 'bulkimport', 'backupsheet', 'readysheet', 'aboutsheet', 'editteam:t1', 'formations', 'trackcfg', 'sharesheet'])
+  // one Club section, the season's and the business's tiles under two small headings (UX-REVIEW-4.md, 29), the same in both doors
+  for (const x of ['signinsheet', 'goview:notify', 'goview:admin', 'goview:people', 'goview:comply', 'scheduler', 'sesstab:fields', 'clubdrills', 'tpllist:clubTpl', 'bulkimport', 'goview:regs', 'sesstab:fees', 'sesstab:hours', 'backupsheet', 'readysheet', 'aboutsheet', 'teamsetup:t1', 'teamsetup:t2'])
     check(`— ${x}`, a.has(x), true);
-  check('— no registrations, session fees or coach hours in Teams', ['goview:regs', 'sesstab:fees', 'sesstab:hours'].some(x => a.has(x)), false);
-  A.ui.door = 'sessions'; A.render(); a = acts(A.rendered());
-  for (const x of ['goview:regs', 'sesstab:fields', 'sesstab:fees', 'sesstab:hours', 'goview:people', 'backupsheet', 'aboutsheet'])
-    check(`— in Sessions: ${x}`, a.has(x), true);
-  check('— in Sessions: no Scheduler, compliance or team set-up', ['scheduler', 'goview:comply', 'formations', 'editteam:t1'].some(x => a.has(x)), false);
+  check('— the season and the business named inside it', /<h3 class="setsubhead">The season<\/h3>[\s\S]*<h3 class="setsubhead">The business<\/h3>/.test(h), true);
+  check('— every tile once', ['data-act="sesstab" data-k="fields"', 'data-act="bulkimport"', 'data-v="people"'].map(x => (h.match(new RegExp(x, 'g')) || []).length).join(), '1,1,1');
+  A.ui.door = 'sessions'; A.render();
+  check('— and the same screen in Sessions', A.rendered() === h, true);
   A.ui.door = 'teams';
   check('— no club calendar here: Club home and the Calendar have it', a.has('schedule'), false);
+  check('— nothing of one team on it: a team\'s set-up is its own screen (UX-REVIEW-4.md, 25)', /data-act="(sharesheet|editteam|formations|trackcfg)"/.test(h), false);
+  h = as('boss', 'teamsetup', 't1');
+  check('a team\'s set-up: name and crest, shapes, what to count, links, who coaches it, and delete', ['editteam:t1', 'formations', 'trackcfg', 'sharesheet', 'goview:people', 'delteam:t1'].every(x => acts(h).has(x)), true);
   check('— the links for families once', (h.match(/data-act="sharesheet"/g) || []).length, 1);
+  check('— titled with the team, over the club', /<span>G14 Flight<\/span>/.test(A.rendered('#titlebar')) && /data-act="clubswitch"/.test(A.rendered('#titlebar')), true);
+  h = as('boss');
 
   h = as('jaz');
-  check('a coach: You, This team, Club (People), About', heads(h), 'You · This team · Club · About');
+  check('a coach: Club (People), Teams, You, About', heads(h), 'Club · Teams · You · About');
   check('— People, the Scheduler (read-only, her teams lit; build 163) and nothing else of the club\'s', [...acts(h)].filter(x => /^goview:(admin|people|regs|comply)$|^scheduler$|^bulkimport$|^clubdrills$/.test(x)).sort().join(), 'goview:people,scheduler');
-  check('— her team\'s set-up, to change', ['editteam:t1', 'formations', 'trackcfg'].every(x => acts(h).has(x)), true);
+  check('— her team, a tile into its set-up, and no other team\'s', acts(h).has('teamsetup:t1') && !acts(h).has('teamsetup:t2'), true);
+  check('— which she changes', ['editteam:t1', 'formations', 'trackcfg'].every(x => acts(as('jaz', 'teamsetup', 't1')).has(x)), true);
+  h = as('jaz');
   check('— no backup or readiness', /backupsheet|readysheet/.test(h), false);
   check('— My drills, since she plans', acts(h).has('mydrills'), true);
-  check('— fields in Teams, for the Scheduler', acts(h).has('sesstab:fields') && !acts(h).has('sesstab:fees'), true);
+  check('— fields for the Scheduler, her sessions\' fees and her hours, in one section (UX-REVIEW-2.md, 7.3)', ['sesstab:fields', 'sesstab:fees', 'sesstab:hours'].every(x => acts(h).has(x)), true);
   A.ui.door = 'sessions'; A.render();
-  check('— fields, her sessions\' fees and her hours in Sessions (UX-REVIEW-2.md, 7.3)', ['sesstab:fields', 'sesstab:fees', 'sesstab:hours'].every(x => acts(A.rendered()).has(x)), true);
+  check('— the same in Sessions', A.rendered() === h, true);
   A.ui.door = 'teams'; A.render();
 
-  h = as('jaz', 'setup', 't2');
-  check('a coach on another team: its set-up to read, nothing to change', /This team/.test(h) && /Shapes/.test(h) && !/data-act="(editteam|formations|trackcfg)"/.test(h), true);
+  h = as('jaz', 'teamsetup', 't2');
+  check('a coach on another team: its set-up to read, nothing to change', /Shapes/.test(h) && !/data-act="(editteam|formations|trackcfg|delteam)"/.test(h), true);
+  as('trk', 'teamsetup', 't1');
+  check('a tracker sent to a team\'s set-up lands on the team', A.ui.view, 'season');
 
   h = as('trk');
   check('a tracker: You and About, no team set-up, no club', heads(h), 'You · About');
@@ -151,6 +161,15 @@ console.log('\n--- Advanced: an admin\'s, in a sheet ---');
   A.closeSheet();
   A.click({ act: 'readysheet' });
   check('Check readiness opens the list, with its fix', /Check readiness/.test(sheet()) && /data-act="preplockdown"/.test(sheet()), true);
+  /* The rows she cannot act on are not crosses on her tile (UX-REVIEW-4.md,
+     33): an app owner is the developer's to set, and the rules unchecked
+     clear by themselves with a signal; the tile said "2 things to fix" to
+     every admin of every club, forever. The sheet still lists them. */
+  const rows = A.readiness(), hers = rows.filter(r => !r.ok && r.mine !== false).length;
+  check('— the app owner is not hers to fix, and is still listed', rows.some(r => r.label === 'The app has an owner' && !r.ok && r.mine === false), true);
+  A.closeSheet();
+  check('— so the tile counts the rest alone', hers < rows.filter(r => !r.ok).length && new RegExp(`Check readiness</b><span class="setsub">${hers} things to fix`).test(A.rendered()), true);
+  check('— and no word of the code on the sheet\'s rows', /index|console/.test(sheet().replace(/<[^>]+>/g, ' ')), false);
   for (const uid of ['jaz', 'trk', 'mum']) {
     as(uid); A.dom.node('#sheet').innerHTML = '';
     A.click({ act: 'backupsheet' }); A.click({ act: 'readysheet' });
@@ -161,11 +180,17 @@ console.log('\n--- Advanced: an admin\'s, in a sheet ---');
 console.log('\n--- nothing twice ---');
 {
   let h = as('boss', 'admin');
-  check('Club details is the club\'s own: details, what parents see, who runs it, teams, retire', ['saveorg', 'rosteropen', 'newteam', 'retireclub'].every(x => h.includes(`data-act="${x}"`)), true);
+  check('Club details is the club\'s own: details, what parents see, who runs it, teams, retire', ['saveorg', 'rosteropen', 'newteam', 'retiresheet'].every(x => h.includes(`data-act="${x}"`)), true);
+  // the one irreversible thing last and behind a sheet (UX-REVIEW-4.md, 27): it sat above the teams
+  check('— retiring is the last thing on it, and a sheet', h.lastIndexOf('data-act="retiresheet"') > h.lastIndexOf('data-act="newteam"') && !/data-act="retireclub"/.test(h), true);
+  A.click({ act: 'retiresheet' });
+  check('— which carries the red button', /data-act="retireclub"/.test(sheet()), true);
+  A.closeSheet();
+  check('— the teams open their own set-up, not a sheet of half of it', /data-act="teamsetup" data-id="t1"/.test(h) && !/data-act="editteam"/.test(h), true);
   check('— and nothing a Settings row opens', /data-act="(schedule|scheduler|bulkimport|clubdrills|people|preplockdown|sesstab)"|data-v="(regs|comply)"/.test(h), false);
   check('— titled Club details, with no second heading', A.rendered('#titlebar').includes('<span>Club details</span>') && !/<h2>Club admin<\/h2>/.test(h), true);
   h = as('jaz', 'roster');
-  check('Squad: one line to the team\'s settings', /data-act="goview" data-v="setup"/.test(h), true);
+  check('Squad: one line to the team\'s settings', /data-act="teamsetup" data-id="t1"/.test(h), true);
   check('— and none of them itself', /data-act="(sharesheet|formations|trackcfg|editteam)"|Team set-up/.test(h), false);
   as('boss', 'season');
   A.click({ act: 'tab', tab: 'more' });
@@ -190,7 +215,11 @@ console.log('\n--- the way back ---');
   A.click({ act: 'navback' });
   check('— then Settings', A.ui.view, 'setup');
   as('boss', 'formation'); A.ui.editFid = 'f1'; A.render(); A.click({ act: 'backsetup' });
-  check('a team\'s shape: back to Settings, where Shapes is', A.ui.view, 'setup');
+  check('a team\'s shape: back to the team\'s set-up, where Shapes is', A.ui.view, 'teamsetup');
+  A.click({ act: 'navback' });
+  check('— and from there to Settings', A.ui.view, 'setup');
+  as('boss', 'notify'); A.click({ act: 'navback' });
+  check('Notifications: back to Settings', A.ui.view, 'setup');
 }
 
 H.summary('one Settings screen');

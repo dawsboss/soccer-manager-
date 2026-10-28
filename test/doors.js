@@ -176,33 +176,32 @@ console.log('\n--- the shared screens are the same in both doors ---');
     as('jaz', v, 'sessions'); const inSess = page();
     check(`${name} is one screen, drawn the same in both doors`, inTeams === inSess && A.curDoor() === 'sessions', true);
   }
-  // Settings is one screen too, but its club rows are the door's (the owner, 2026-10-25), and You and About are the same
+  // Settings is one screen too: its club rows were the door's from build 187 to 192, and are one section since UX-REVIEW-4.md, 29
   as('jaz', 'setup', 'teams'); const setT = page();
   as('jaz', 'setup', 'sessions'); const setS = page();
-  check('Settings keeps the door she was in, and draws a different club section in each', A.curDoor() + ' ' + (setT !== setS), 'sessions true');
+  check('Settings keeps the door she was in, and is the same screen in each', A.curDoor() + ' ' + (setT === setS), 'sessions true');
   const noSwitch = h => h.replace(/<button class="tbdoor"[\s\S]*?<\/button>/, '');
   as('mum', 'calendar', 'teams'); const t = title(); as('mum', 'calendar', 'sessions');
-  check('— and titled the same, only the switch naming the other door', noSwitch(title()) === noSwitch(t) && /data-d="teams"/.test(title()) && /data-d="sessions"/.test(t), true);
+  check('— and titled the same, only the switch differing', noSwitch(title()) === noSwitch(t) && /data-d="teams"/.test(title()) && /data-d="sessions"/.test(t), true);
+  // the switch names the door she is in, with a chevron, and a tap goes to the other (UX-REVIEW-4.md, 29): named for the other it read as a label
+  check('— the switch says where she is, Sessions, and switches to Teams', /class="tbdoor" data-act="door" data-d="teams" aria-label="In Sessions: switch to Teams"[^>]*>[\s\S]*?<span>Sessions<\/span><span class="chev"/.test(title()), true);
+  check('— and in Teams says Teams', /data-d="sessions"[^>]*>[\s\S]*?<span>Teams<\/span><span class="chev"/.test(t), true);
   // the account sheet is the account alone, the same in both doors
   as('jaz', 'season'); A.click({ act: 'accountsheet' }); const acT = sheet(); A.closeSheet();
   as('jaz', 'sessions'); A.click({ act: 'accountsheet' }); const acS = sheet(); A.closeSheet();
   check('the account sheet is the same in both doors', acT === acS, true);
 }
 
-console.log('\n--- Settings, by door (the owner, 2026-10-25) ---');
+console.log('\n--- Settings: one Club section for both doors (UX-REVIEW-4.md, 29; by door from build 187 to 192) ---');
 {
   const acts = h => new Set([...h.matchAll(/data-act="(\w+)"(?: data-(?:v|k|d)="([^"]*)")?/g)].map(m => m[2] ? m[1] + ':' + m[2] : m[1]));
   as('boss', 'setup', 'teams'); let a = acts(page());
-  check('an admin in Teams: the season\'s club rows', ['goview:admin', 'goview:people', 'scheduler', 'sesstab:fields', 'goview:comply', 'clubdrills', 'tpllist:clubTpl', 'bulkimport'].every(x => a.has(x)), true);
-  check('— and no registrations, fees or hours', ['goview:regs', 'sesstab:fees', 'sesstab:hours'].some(x => a.has(x)), false);
-  check('— the club section says whose', /<h2 class="sechead">Club · Teams<\/h2>/.test(page()), true);
-  check('— one row to the Sessions settings', a.has('door:sessions') && /Sessions settings/.test(page()), true);
+  check('an admin in Teams: the season\'s tiles and the business\'s, one section', ['goview:admin', 'goview:people', 'scheduler', 'sesstab:fields', 'goview:comply', 'clubdrills', 'tpllist:clubTpl', 'bulkimport', 'goview:regs', 'sesstab:fees', 'sesstab:hours'].every(x => a.has(x)), true);
+  check('— headed Club, with the season and the business named under it', /<h2 class="sechead">Club<\/h2>/.test(page()) && /The season<\/h3>/.test(page()) && /The business<\/h3>/.test(page()), true);
+  check('— no card to the other door\'s settings: there is no other half', a.has('door:sessions') || /Sessions settings|Teams settings/.test(page()), false);
   A.click({ act: 'door', d: 'sessions', v: 'setup' });
-  a = acts(page());
-  check('— which stays on Settings, now in Sessions', A.ui.view + ' ' + A.curDoor(), 'setup sessions');
-  check('an admin in Sessions: registrations, fields, fees, hours, people, the club', ['goview:admin', 'goview:people', 'goview:regs', 'sesstab:fields', 'sesstab:fees', 'sesstab:hours', 'bulkimport'].every(x => a.has(x)), true);
-  check('— and none of the season\'s: no Scheduler, compliance, club drills or a team\'s set-up', ['scheduler', 'goview:comply', 'clubdrills', 'tpllist:clubTpl', 'formations', 'trackcfg', 'sharesheet'].some(x => a.has(x)) || /This team/.test(page()), false);
-  check('— and a row back to the Teams settings', a.has('door:teams'), true);
+  check('— the switch to Sessions, with Settings named, stays on Settings', A.ui.view + ' ' + A.curDoor(), 'setup sessions');
+  check('an admin in Sessions: the same tiles', [...acts(page())].sort().join() === [...a].sort().join(), true);
   A.click({ act: 'goview', v: 'regs' });
   check('Registrations are the Sessions door\'s, and Back goes to its Settings', A.curDoor() + ' ' + A.upView(), 'sessions setup');
   as('boss', 'setup', 'teams'); A.click({ act: 'sesstab', k: 'fields' });

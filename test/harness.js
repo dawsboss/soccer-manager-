@@ -181,7 +181,7 @@ const EXPORTS = `{
   viewCalendar, sheetCalItem, sheetCalEvent, calFormNew, publicEvents, pubText, mayAct,
   calSels, calSel, calEntries, calMulti, calEditTeams, evHue, evWhen, layDay, gridHours, calView, calDay, CAL_VIEWS, KIND_HUE, normView, GAME_VIEWS,
   calDayList, calAgenda, calShowTeam, rsvpOpen, calKey, calNothing, TEAM_HUES, OTHER_CLUB_HUE, sheetCalAdd,
-  todayStr, dayLabel, niceTime, hm, addDays, weekdayOf, CALLED, HOME_AWAY, SERIES_MAX,
+  todayStr, nextSaturday, dayLabel, niceTime, hm, addDays, weekdayOf, CALLED, HOME_AWAY, SERIES_MAX,
   get calForm() { return calForm },
   fixtureDoc, calendarDoc, ensureFixtureShares, outIds, familySaidNo, attendance, attendLine, attendOf, attendUntaken, cameToGame,
   /* practice */

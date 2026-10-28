@@ -131,8 +131,8 @@ const PATHS = [
     },
     got: uid => (((((A.state.rsvp || {}).t1 || {}).e_e1 || {})[kidOf(uid)]) || {}).v, want: 'no' },
   { ask: 'How do I stop the buzzing?', say: 'More → Settings → Notifications', who: EVERYONE,
-    walk() { tab('more'); A.click({ act: 'goview', v: 'setup' }); },
-    got: () => A.ui.view + ' ' + /id="setNotify"/.test(page()), want: 'setup true' },
+    walk() { tab('more'); A.click({ act: 'goview', v: 'setup' }); if (!/data-act="goview" data-v="notify"/.test(page())) throw new Error('no Notifications tile'); A.click({ act: 'goview', v: 'notify' }); },
+    got: () => A.ui.view + ' ' + /What notifies you/.test(page()), want: 'notify true' },
   /* One inbox for a family (UX-REVIEW-3.md, 17.1): what moved is a card at the
      top of Messages, where people write to her, and What's new is not on her
      More sheet. Staff keep What's new, which also carries club activity, so

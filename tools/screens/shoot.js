@@ -259,29 +259,33 @@ const SNAP = () => {
       await tab('more'); await capture('more', 'More');
       await tap('#sheet [data-act="goview"][data-v="setup"]'); await capture('settings', 'Settings, Teams door');
       await sheetFrom('#app [data-act="signinsheet"]', 'you-sheet', 'the You card');
+      await settings();
+      if (await screenFrom('#app [data-act="goview"][data-v="notify"]', 'notifications', 'Settings → Notifications (build 193)')) await sheetFrom('#app [data-act="pushhow"]', 'notifications-how', 'how to allow them on this phone');
+      await settings();
+      // a team's set-up, one screen (build 193): its tiles and the sheets behind them
+      if (await screenFrom('#app [data-act="teamsetup"]', 'team-setup', 'a team\'s set-up')) {
+        for (const [sel, name, note] of [['[data-act="editteam"]', 'team-edit', 'Name and crest'], ['[data-act="formations"]', 'team-shapes', 'Shapes'], ['[data-act="trackcfg"]', 'team-count', 'What to count'], ['[data-act="sharesheet"]', 'team-links', 'Links for families']]) await sheetFrom('#app ' + sel, name, note);
+      }
       for (const [sel, name, note, sheet] of [
-        ['[data-act="editteam"]', 'team-edit', 'This team: Name and crest', true], ['[data-act="formations"]', 'team-shapes', 'This team: Shapes', true],
-        ['[data-act="trackcfg"]', 'team-count', 'This team: What to count', true], ['[data-act="sharesheet"]', 'team-links', 'This team: Links for families', true],
         ['[data-act="goview"][data-v="admin"]', 'club-details', 'Club details'], ['[data-act="goview"][data-v="people"]', 'people', 'People'],
         ['[data-act="scheduler"]', 'scheduler', 'Scheduler'], ['[data-act="sesstab"][data-k="fields"]', 'fields', 'Fields and permits'],
         ['[data-act="goview"][data-v="comply"]', 'comply', 'Coach compliance'], ['[data-act="clubdrills"]', 'club-drills', 'Club drills'],
         ['[data-act="tpllist"]', 'club-templates', 'Club templates', true], ['[data-act="bulkimport"]', 'bulk-import', 'Bulk import', true],
+        ['[data-act="goview"][data-v="regs"]', 'regs', 'Registrations'], ['[data-act="sesstab"][data-k="fees"]', 'fees', 'Session fees'], ['[data-act="sesstab"][data-k="hours"]', 'hours', 'Coach hours'],
         ['[data-act="backupsheet"]', 'backup', 'Backup', true], ['[data-act="readysheet"]', 'readiness', 'Check readiness', true], ['[data-act="aboutsheet"]', 'about', 'About', true]]) {
         await settings();
         if (sheet) await sheetFrom('#app ' + sel, name, note);
         else if (await screenFrom('#app ' + sel, name, note)) {
-          if (name === 'club-details') { await sheetFrom('#app [data-act="editteam"]', 'club-details-editteam', 'Edit a team from Club details'); await sheetFrom('#app [data-act="newteam"]', 'club-details-newteam', 'Add a team from Club details'); }
+          if (name === 'club-details') { await sheetFrom('#app [data-act="retiresheet"]', 'club-details-retire', 'Retire this club, behind its sheet'); await sheetFrom('#app [data-act="newteam"]', 'club-details-newteam', 'Add a team from Club details'); }
           if (name === 'people') await sheetFrom('#app [data-act="invitenew"]', 'people-invite', 'Invite someone');
         }
       }
       await settings();
-      if (await screenFrom('#app [data-act="door"][data-v="setup"]', 'settings-sessions', 'Settings, Sessions door')) {
-        for (const [sel, name, note] of [['[data-act="goview"][data-v="regs"]', 'regs', 'Registrations'], ['[data-act="sesstab"][data-k="fees"]', 'fees', 'Session fees'], ['[data-act="sesstab"][data-k="hours"]', 'hours', 'Coach hours']]) {
-          await settings(); await screenFrom('#app ' + sel, name, note);
-        }
+      if (await tap('#titlebar .tbdoor', 'the door switch')) {
+        await capture('settings-sessions', 'Settings in the Sessions door: the same screen');
         await tab('home'); await capture('home-sessions', 'Home in the Sessions door');
         await tab('more'); await capture('more-sessions', 'More in the Sessions door'); await closeSheet();
-        await settings(); await tap('#app [data-act="door"][data-v="setup"]', 'back to Teams settings');
+        await tap('#titlebar .tbdoor', 'back to Teams');
       }
       // adding a game, every door to it, and changing one
       await tab('calendar'); await capture('calendar', 'Calendar');

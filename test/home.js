@@ -425,6 +425,12 @@ const club = () => ({
     check('a link (or a reload) keeps the screen it names', B.ui.view, 'calendar');
     B = cached('jaz', { view: 'roster' });
     check('staff keep what was open', B.ui.view, 'roster');
+    // a phone with nothing saved opened on the Calendar, the longest list in the app (UX-REVIEW-4.md, 30): Home, for staff too
+    const blank = uid => H.loadApp({ firebase: makeFakebase(), config: CONFIG, storage: { 'sm.workspace': 'CLUB', 'sm.me': JSON.stringify({ uid, name: uid }), 'sm.data.v1:CLUB': JSON.stringify(club()) } });
+    B = blank('jaz');
+    check('a coach\'s phone with nothing saved opens on Home, her team', B.ui.view + ' ' + /data-tab="home" aria-current="true"/.test(B.rendered('#tabbar')), 'season true');
+    B = blank('boss');
+    check('an admin\'s on Club home', B.ui.view, 'club');
 
     // a new phone: who she is here as is known only once the club has been read
     const fresh = async tapFirst => {

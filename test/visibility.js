@@ -127,10 +127,12 @@ console.log('\n--- only a coach or admin adds players and games ---');
      age group, and a tracker, who logs games for the squad, doesn't get it. */
   const setUp = (who, tid) => { as(club(), who, tid); return html('setup'); };
   let h = setUp('jaz', 't1');
-  check('a coach has the team\'s set-up on Settings', /This team/.test(h) && /data-act="formations"/.test(h) && /data-act="trackcfg"/.test(h) && /data-act="editteam"/.test(h), true);
-  check('— and Squad has one line to it', /data-act="goview" data-v="setup"/.test(html('roster')) && !/data-act="formations"|data-act="trackcfg"/.test(html('roster')), true);
+  // the team's set-up is a screen of its own, a tile on Settings (UX-REVIEW-4.md, 25)
+  check('a coach has her team\'s set-up on Settings', /<h2 class="sechead">Teams<\/h2>/.test(h) && /data-act="teamsetup" data-id="t1"/.test(h) && !/data-act="teamsetup" data-id="t2"/.test(h), true);
+  check('— which she changes', /data-act="formations"/.test(html('teamsetup')) && /data-act="trackcfg"/.test(html('teamsetup')) && /data-act="editteam"/.test(html('teamsetup')), true);
+  check('— and Squad has one line to it', /data-act="teamsetup" data-id="t1"/.test(html('roster')) && !/data-act="formations"|data-act="trackcfg"/.test(html('roster')), true);
   h = setUp('jaz', 't2');
-  check('another team\'s coach reads it and changes nothing', /This team/.test(h) && /Shapes/.test(h) && !/data-act="formations"|data-act="trackcfg"|data-act="editteam"/.test(h), true);
+  check('another team\'s coach has no tile for it, and reads its set-up changing nothing', !/data-act="teamsetup" data-id="t2"/.test(h) && /Shapes/.test(html('teamsetup')) && !/data-act="formations"|data-act="trackcfg"|data-act="editteam"|data-act="delteam"/.test(html('teamsetup')), true);
   h = setUp('trk', 't1');
   check('a tracker has the squad and not the set-up', /class="plist"/.test(html('roster')) && !/This team/.test(h) && !/data-v="setup"/.test(html('roster')), true);
   as(club(), 'boss'); A.ui.view = 'teamset'; A.render();

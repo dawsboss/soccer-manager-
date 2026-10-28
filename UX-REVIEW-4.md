@@ -16,6 +16,15 @@ Registrations, Session fees, Coach hours, the calendar's `+`, Add a game from Se
 captures; ids in parentheses (`boss-admin 04-settings`) name one. Every measurement below is
 read off the capture's inventory, not estimated.
 
+**Built in build 193** (the owner, 2026-10-28: *have you implemented all what needs fixing?*):
+23, 24, 25, 27, 28, 29, 30, 31 and 33 whole; 34 but for Club drills landing on a team's Training
+tab; 35 in part (Club home's foot loses its Settings button; *All teams* stays on More by the
+owner's word of 2026-10-15, now saying Scheduler); 26 only as far as the Session fees tile
+naming its switch. Left: 32 (where an admin lands in a game), Club drills' landing, and moving
+the club's switches onto Club details. `test/settings.js`, `test/doors.js`, `test/messages.js`,
+`test/push.js`, `test/home.js`, `test/calendar.js` and `test/invites.js` pin it; the `admin` tour
+in `tools/screens/shoot.js` captures it again.
+
 **The short answer: yes, and the owner's instinct about where is right.** The Settings screen is
 the thick part, but not because it has too many tiles. The eight club tiles are the short,
 good part. It is thick because the person who runs the club gets, before the club, a card of

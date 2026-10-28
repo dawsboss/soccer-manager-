@@ -185,6 +185,9 @@ const CLUB = {
     await fbk.serveClub('CLUB', CLUB, A.flush); await A.flush();
     A.ui.view = 'people'; A.render();
     check('People offers invites to an admin', /data-act="invitenew"/.test(A.rendered()), true);
+    // first, above the list of everyone (UX-REVIEW-4.md, 28): it was under every person card, two screens down
+    check('— above the people, not under them', A.rendered().indexOf('data-act="invitenew"') < A.rendered().indexOf('data-act="personrow"'), true);
+    check('— and the date on a person says what it is', /<td class="dim">Joined /.test(A.rendered()), true);
     check('and reads the club\'s list', fbk.watching('clubInvites/CLUB'), true);
 
     A.click({ act: 'invitenew' });

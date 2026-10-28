@@ -510,7 +510,8 @@ const NOTE = (A, by, text, extra) => ({ by, byName: CLUB.access.members[by].name
     // UX-REVIEW-2.md, 6.2: the switches are in Settings alone, the page has a gear to them
     check('no switches on it, a gear to them instead', /What notifies you|data-act="muteset"/.test(A.rendered()) + ' ' + /data-act="notifyset"/.test(A.rendered()), 'false true');
     A.click({ act: 'notifyset' }); await A.flush();
-    check('the gear opens Settings at Notifications', A.ui.view + ' ' + /id="setNotify">Notifications<\/h2>[\s\S]*What notifies you/.test(A.rendered()), 'setup true');
+    check('the gear opens Settings → Notifications, a screen of its own (UX-REVIEW-4.md, 24)', A.ui.view + ' ' + /<h2>Notifications<\/h2>[\s\S]*What notifies you/.test(A.rendered()), 'notify true');
+    check('— at its own address, back to Settings', A.uiToHash() + ' ' + A.upView(), '#/settings/notifications setup');
     A.click({ act: 'notes' }); await A.flush();
     A.click({ act: 'msgprivacy' });
     const p = String(A.dom.node('#sheet').innerHTML);
@@ -523,7 +524,9 @@ const NOTE = (A, by, text, extra) => ({ by, byName: CLUB.access.members[by].name
     fbk.deliver('board/CLUB/t1', {}); fbk.deliver('dm/CLUB/t1/mum', null); await A.flush();
     check('her own switches are read, from her own place', fbk.watching('people/mum/mute'), true);
     A.click({ act: 'goview', v: 'setup' }); await A.flush();
-    check('offered on Settings, under Notifications', /What notifies you/.test(A.rendered()) && /data-act="muteset" data-k="notice"/.test(A.rendered()), true);
+    check('Settings has one tile to them, and no switch on the page', /data-act="goview" data-v="notify"/.test(A.rendered()) && !/data-act="muteset"/.test(A.rendered()), true);
+    A.click({ act: 'goview', v: 'notify' }); await A.flush();
+    check('offered on Settings → Notifications, one switch a row', /What notifies you/.test(A.rendered()) && /role="switch" aria-checked="true" data-act="muteset" data-k="notice" data-v="1"/.test(A.rendered()), true);
     check('a parent has no Club activity switch, hearing none', /data-k="news"/.test(A.rendered()), false);
     A.click({ act: 'muteset', k: 'notice', v: '1' }); await A.flush();
     check('one write, hers, at that kind', fbk.writtenTo('people/mum/mute/notice').map(w => w.value).join(), 'true');
@@ -552,7 +555,7 @@ const NOTE = (A, by, text, extra) => ({ by, byName: CLUB.access.members[by].name
     const fbk = makeFakebase().refuseWrites(p => p.startsWith('people/'));
     const { A } = await boot('mum', { fbk });
     A.click({ act: 'muteset', k: 'msg', v: '1' }); await A.flush();
-    check('refused by older rules: taken back and said', /set-up is out of date/.test(A.lastToast() || '') && /aria-pressed="true">On/.test((A.click({ act: 'goview', v: 'setup' }), A.rendered())), true);
+    check('refused by older rules: taken back and said', /set-up is out of date/.test(A.lastToast() || '') && /aria-checked="true" data-act="muteset" data-k="msg"/.test((A.click({ act: 'goview', v: 'notify' }), A.rendered())), true);
   }
 
   console.log('\n--- no signal, and refusals ---');

@@ -713,6 +713,16 @@ console.log('--- the games are on the calendar, and on the team\'s Season ---');
   check('the +\'s sheet has a game', /data-act="newmatch" data-from="cal"/.test(sheet()), true);
   check('and a run of games', /data-act="calgames" data-tid="t1"/.test(sheet()), true);
   A.click({ act: 'newmatch', from: 'cal' });
+  /* The sheet is the game first, with what the team already carries folded
+     (UX-REVIEW-4.md, 31): arrive by, kit, notes and video under one fold, the
+     format under another, closed for a new game and open when editing. The
+     shapes offered are the side's, never 4-4-2 (11v11) on a 7v7 game. */
+  check('a new game: the opponent, date, kick-off, where and home or away first, the rest under two folds', (sheet().match(/<details class="fold"/g) || []).length + ' ' + (sheet().indexOf('id="mHome"') < sheet().indexOf('<details class="fold"')), '2 true');
+  A.closeSheet(); A.click({ act: 'newmatch' });
+  check('— from Add a game, the date is the coming Saturday, never a Wednesday', (sheet().match(/id="mDate" value="([^"]+)"/) || [])[1] === A.nextSaturday() && new Date(A.nextSaturday() + 'T12:00:00').getDay(), 6);
+  A.closeSheet(); A.click({ act: 'calnew', tid: 't1', v: '2026-09-26' }); A.click({ act: 'newmatch', from: 'cal' });
+  check('— the shapes are one side\'s', [...new Set([...sheet().matchAll(/preset:(\d+):/g)].map(m => m[1]))].join(), '11');
+  check('— the team\'s own default first', /<option value="auto" selected>Team default/.test(sheet()), true);
   type({ mOpp: 'Westfield', mDate: '2026-09-26', mKick: '10:00', mVenue: '', mHome: '', mArrive: '', mKit: '', mNotes: '', mCount: '2', mLen: '40', mSide: '9', mShape: 'auto', mVeo: '' });
   A.click({ act: 'savematch', id: '' });
   check('a game added for later leaves her on the calendar', A.ui.view, 'calendar');
