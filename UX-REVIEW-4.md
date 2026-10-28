@@ -15,8 +15,10 @@ was checked against the capture and the code it names. Nothing UX-REVIEW-3.md's 
 is repeated.
 
 *Built in build 193, the same day: every finding in sections 23, 25 and 26 but two, and 24.1's
-explanation. Left: hiding the Sessions pill where the club has nothing behind it (24.1 (a)), which
-is the owner's call, since DOORS.md gives every family both doors; Settings' *This team* following
+explanation. Set aside by the owner (2026-10-28): hiding the Sessions pill where the club has
+nothing behind it (24.1 (a)), because the screens must look the same on a parent's phone and an
+admin's, so an admin can talk a parent through them; the pill stays for everyone, and the one-time
+card and the guide step are what explain it. Left: Settings' *This team* following
 the team she chose to look at (23.4), which `test/settings.js` pins on purpose (a coach reads another
 team's set-up there) and which 23.2 covers on a new phone; and the optional 26.2. The re-capture
 after the build is what the owner has; the checks in section 29 hold each fix. The three extra walks
