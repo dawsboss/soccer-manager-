@@ -193,14 +193,14 @@ console.log('\n--- Settings, by door (the owner, 2026-10-25) ---');
 {
   const acts = h => new Set([...h.matchAll(/data-act="(\w+)"(?: data-(?:v|k|d)="([^"]*)")?/g)].map(m => m[2] ? m[1] + ':' + m[2] : m[1]));
   as('boss', 'setup', 'teams'); let a = acts(page());
-  check('an admin in Teams: the season\'s club rows', ['goview:admin', 'goview:people', 'scheduler', 'sesstab:fields', 'goview:comply', 'clubdrills', 'tpllist:clubTpl', 'bulkimport'].every(x => a.has(x)), true);
+  check('an admin in Teams: the season\'s club rows', ['goview:admin', 'goview:people', 'goview:usage', 'scheduler', 'sesstab:fields', 'goview:comply', 'clubdrills', 'tpllist:clubTpl', 'bulkimport'].every(x => a.has(x)), true);
   check('— and no registrations, fees or hours', ['goview:regs', 'sesstab:fees', 'sesstab:hours'].some(x => a.has(x)), false);
   check('— the club section says whose', /<h2 class="sechead">Club · Teams<\/h2>/.test(page()), true);
   check('— one row to the Sessions settings', a.has('door:sessions') && /Sessions settings/.test(page()), true);
   A.click({ act: 'door', d: 'sessions', v: 'setup' });
   a = acts(page());
   check('— which stays on Settings, now in Sessions', A.ui.view + ' ' + A.curDoor(), 'setup sessions');
-  check('an admin in Sessions: registrations, fields, fees, hours, people, the club', ['goview:admin', 'goview:people', 'goview:regs', 'sesstab:fields', 'sesstab:fees', 'sesstab:hours', 'bulkimport'].every(x => a.has(x)), true);
+  check('an admin in Sessions: registrations, fields, fees, hours, people, the club', ['goview:admin', 'goview:people', 'goview:usage', 'goview:regs', 'sesstab:fields', 'sesstab:fees', 'sesstab:hours', 'bulkimport'].every(x => a.has(x)), true);
   check('— and none of the season\'s: no Scheduler, compliance, club drills or a team\'s set-up', ['scheduler', 'goview:comply', 'clubdrills', 'tpllist:clubTpl', 'formations', 'trackcfg', 'sharesheet'].some(x => a.has(x)) || /This team/.test(page()), false);
   check('— and a row back to the Teams settings', a.has('door:teams'), true);
   A.click({ act: 'goview', v: 'regs' });

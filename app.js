@@ -2,8 +2,8 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '192';
-const BUILT = '2026-10-25';
+const BUILD = '193';
+const BUILT = '2026-10-28';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
    and nothing else, so writing it is a question only the published rules can
@@ -11,7 +11,7 @@ const BUILT = '2026-10-25';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 38;
+const RULES_VERSION = 39;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -379,6 +379,7 @@ function forgetOthersChildren() {
   // coaching records: the admins' list, and each person's own
   state.comply = Object.fromEntries(Object.entries(state.comply || {}).filter(([u]) => u === me.uid));
   delete (state.access || {}).log;
+  delete state.usage;
   if (state.access && state.access.members) state.access.members = Object.fromEntries(Object.entries(state.access.members).map(([k, m]) => [k, { name: (m && m.name) || '' }]));
   saveLocal();
 }
@@ -394,6 +395,45 @@ function staffName() {
   if (!isAdmin(u) && !(a.coachIndex || {})[u] && !(a.helperIndex || {})[u]) return;
   namedHere = wsCode() + u;
   Promise.resolve(fb.set(fb.ref(fb.db, clubPath('names/' + u)), { name: String(me.name || '').slice(0, 80) })).catch(() => { });
+}
+/* Usage (build 193; the owner, 2026-10-28: *pages loaded, people logging in
+   when*). An open is this page loaded and the club read, once per page load
+   per club: her phone writes when (members/{uid}/seen) and adds one to her
+   own count for the day (usage/{day}/{uid}; read first, so an open on her
+   other phone that day is kept). Each is hers alone to write and the admins'
+   to read (Settings → Usage, viewUsage()). Straight to the database like a
+   lookup table, never through the outbox: an open owed from yesterday is not
+   an open today, and nothing at the sideline waits on it. Refused (rules
+   before version 39) or lost to no signal, nothing is kept and nothing is
+   said: it is a count, not the club's data. */
+let openedHere = '';
+let myOpen = null;      // { u, day, n, at }: this page load's open, laid over what the club says until the club says it back
+// SERVER.md: who opened the app and when; a server would read it off sign-in itself and prune old days.
+function noteOpen() {
+  if (!fb || !rtdb || !me || openedHere === wsCode() + me.uid) return;
+  if (!(acc().index || {})[me.uid]) return;
+  openedHere = wsCode() + me.uid;
+  const at = nowMs(), day = dayStr(new Date(at)), u = me.uid;
+  const { db, mod } = rtdb;
+  const quietly = p => Promise.resolve(p).catch(() => { });
+  myOpen = { u, day, n: 0, at };
+  layMyOpen();
+  quietly(mod.set(mod.ref(db, clubPath(`access/members/${u}/seen`)), at));
+  const mine = mod.ref(db, clubPath(`usage/${day}/${u}`));
+  mod.onValue(mine, s => {
+    myOpen.n = (Number(s.val()) || 0) + 1;
+    layMyOpen();
+    quietly(mod.set(mine, myOpen.n));
+  }, () => { }, { onlyOnce: true });
+}
+/* This open, in memory, so an admin's own is on her Usage screen at once:
+   the club's answer that was already on its way (the listeners' first
+   values) does not carry it, and nothing older than it must win. */
+function layMyOpen() {
+  if (!myOpen || !me || myOpen.u !== me.uid) return;
+  const { u, day, n, at } = myOpen, mem = (acc().members || {})[u];
+  if (mem && !(mem.seen >= at)) setDeep(state, `access/members/${u}/seen`, at);
+  if (n && state.usage && !(Number((state.usage[day] || {})[u]) >= n)) setDeep(state, `usage/${day}/${u}`, n);
 }
 /* A parent's own phone keeps her name on each of her children's records
    (familyNames), once a session, so a family linked before names were kept,
@@ -618,7 +658,7 @@ function noteMember() {
   if (!me || !fb) return;
   const known = (acc().members || {})[me.uid];
   if (!known || known.name !== me.name || known.email !== me.email) {
-    quiet(`access/members/${me.uid}`, { name: me.name, email: me.email, at: (known && known.at) || nowMs() });
+    quiet(`access/members/${me.uid}`, { name: me.name, email: me.email, at: (known && known.at) || nowMs(), ...(known && known.seen ? { seen: known.seen } : {}) });
     saveLocal();
   }
 }
@@ -918,9 +958,11 @@ async function initSync() {
          beside the programs. */
       // a coach or a team helper (an official, in MSYSA's words); never a tracker
       const ownComply = !r.admin && me && (r.all || ((access || {}).helperIndex || {})[me.uid]);
-      const [programs, waivers, complyV] = await Promise.all([once('programs'), once('waivers'),
-        r.admin ? once('comply') : ownComply ? once('comply/' + me.uid) : null]);
+      // and who opens the app and when (build 193): the admins' alone, read beside them
+      const [programs, waivers, complyV, usageV] = await Promise.all([once('programs'), once('waivers'),
+        r.admin ? once('comply') : ownComply ? once('comply/' + me.uid) : null, r.admin ? once('usage') : null]);
       const comply = r.admin ? complyV || {} : complyV ? { [me.uid]: complyV } : {};
+      const usage = r.admin ? usageV || {} : {};
       const regs = {}, agreed = {};
       /* Tryouts (GOTSPORT.md, *Tryouts and evaluations*): the bibs and every
          evaluator's scores for an admin; the bibs and her own scores for an
@@ -939,7 +981,7 @@ async function initSync() {
           regs[pg] = rv || {}; agreed[pg] = av || {};
         } else if (me) await Promise.all(Object.keys(children).filter(c => kidIsMine(children[c])).map(async c => { const v = await once('regs/' + pg + '/' + c); if (v) (regs[pg] = regs[pg] || {})[c] = v; }));
       })));
-      return { r, access, org, names, teams, roster, matches, rsvp, members: membersV, mine, log, squads, kids, notes, children, care, teamCare, programs: programs || {}, waivers: waivers || {}, regs, agreed, tryBibs, evals, comply };
+      return { r, access, org, names, teams, roster, matches, rsvp, members: membersV, mine, log, squads, kids, notes, children, care, teamCare, programs: programs || {}, waivers: waivers || {}, regs, agreed, tryBibs, evals, comply, usage };
     }
 
     const namesAsMembers = n => Object.fromEntries(Object.entries(n || {}).filter(([, x]) => x && typeof x === 'object').map(([u, x]) => [u, { name: String(x.name || '') }]));
@@ -971,7 +1013,7 @@ async function initSync() {
         if (!t || typeof t !== 'object') continue;
         teams[tid] = { ...t, players: tid in x.squads ? squadWith(x.squads[tid], (x.notes || {})[tid], x.r.all) : fromRoster((x.roster || {})[tid], x.kids[tid]) };
       }
-      return { teams, matches: x.matches || {}, access, rsvp: x.rsvp || {}, children: x.children || {}, care: x.care || {}, teamCare: x.teamCare || {}, programs: x.programs || {}, waivers: x.waivers || {}, regs: x.regs || {}, agreed: x.agreed || {}, tryBibs: x.tryBibs || {}, evals: x.evals || {}, comply: x.comply || {} };
+      return { teams, matches: x.matches || {}, access, rsvp: x.rsvp || {}, children: x.children || {}, care: x.care || {}, teamCare: x.teamCare || {}, programs: x.programs || {}, waivers: x.waivers || {}, regs: x.regs || {}, agreed: x.agreed || {}, tryBibs: x.tryBibs || {}, evals: x.evals || {}, comply: x.comply || {}, ...(x.r.admin ? { usage: x.usage || {} } : {}) };
     }
 
     /* After the first read, the same parts listened to: a change to one never
@@ -997,7 +1039,7 @@ async function initSync() {
         if (reachKey(orgsReach(a)) !== reachKey(r)) attachWorkspace();
       });
       val('org', v => setAcc('org', v));
-      if (r.all) val('members', v => setAcc('members', v || {}));
+      if (r.all) val('members', v => { setAcc('members', v || {}); layMyOpen(); });
       else {
         const own = { names: x.names, mine: x.mine };
         const put = () => setAcc('members', { ...namesAsMembers(own.names), ...(own.mine && me ? { [me.uid]: own.mine } : {}) });
@@ -1072,6 +1114,8 @@ async function initSync() {
       // coaching records: the list for an admin, her own for the rest of the staff
       if (r.admin) val('comply', v => { state.comply = v || {}; overlayPending(state.comply, 'comply'); complyHeard = true; saveLocal(); render(); });
       else if (me && (r.all || ((x.access || {}).helperIndex || {})[me.uid])) val('comply/' + me.uid, v => { state.comply = v ? { [me.uid]: v } : {}; complyHeard = true; saveLocal(); render(); });
+      // who opens the app and when (build 193), for the admins' Usage screen and nobody else's phone
+      if (r.admin) val('usage', v => { state.usage = v || {}; layMyOpen(); saveLocal(); render(); });
       /* A family listens to her own children's registrations, so an offer
          after tryouts (or anything else the club does to one) reaches her
          screen without a reload. One path per child per program: she may
@@ -1163,6 +1207,7 @@ async function initSync() {
         if (!x) { connected(null); return; }
         connected(orgsClub(x));
         staffName();
+        noteOpen();
         ownFamilyName();
         if (x.r.all) moveCoachNotes(x.squads, x.notes);
         listenOrgs(x);
@@ -1326,7 +1371,7 @@ function overlayPending(target, under) {
 function mergeConnect(v) {
   // a copy: what this phone owes is laid over it, and the snapshot it came in is not ours to change
   v = clone(v);
-  const remote = { teams: v.teams || {}, matches: v.matches || {}, access: v.access || {}, rsvp: v.rsvp || {}, children: v.children || {}, care: v.care || {}, teamCare: v.teamCare || {}, programs: v.programs || {}, waivers: v.waivers || {}, regs: v.regs || {}, agreed: v.agreed || {}, tryBibs: v.tryBibs || {}, evals: v.evals || {}, comply: v.comply || {} };
+  const remote = { teams: v.teams || {}, matches: v.matches || {}, access: v.access || {}, rsvp: v.rsvp || {}, children: v.children || {}, care: v.care || {}, teamCare: v.teamCare || {}, programs: v.programs || {}, waivers: v.waivers || {}, regs: v.regs || {}, agreed: v.agreed || {}, tryBibs: v.tryBibs || {}, evals: v.evals || {}, comply: v.comply || {}, ...(v.usage ? { usage: v.usage } : {}) };
   const owed = [];
   for (const coll of ['teams', 'matches']) {
     for (const [id, x] of Object.entries(state[coll] || {})) {
@@ -7833,7 +7878,7 @@ function render() {
   let inGame = ui.view === 'game';
   // a game screen with no game is just four buttons that do nothing
   if (inGame && !match() && !teamMatches(ui.teamId).length) { ui.view = 'season'; inGame = false; }
-  if ((ui.view === 'admin' || ui.view === 'regs' || ui.view === 'comply') && !canAdmin()) ui.view = 'club';
+  if ((ui.view === 'admin' || ui.view === 'regs' || ui.view === 'comply' || ui.view === 'usage') && !canAdmin()) ui.view = 'club';
   // the Scheduler is read by every coach too, her teams lit (SCHEDULER.md); the rest of the club's screens are the admins'
   if (ui.view === 'scheduler' && !canSched()) ui.view = 'club';
   // My players is the top of a family's Home since build 153 (viewFamSeason); staff with a child keep it under More
@@ -7980,7 +8025,7 @@ function render() {
           v === 'season' ? viewSeason() : v === 'teamstats' ? viewTeamStats() : v === 'minutes' ? viewMinutes() : v === 'attend' ? viewAttend() :
             v === 'formation' ? viewFormation() : v === 'games' ? viewGames() : v === 'club' ? viewClub() : v === 'people' ? viewPeople() : v === 'admin' ? viewAdmin()
               : v === 'mine' ? viewMine() : v === 'practice' ? viewPractice()
-                : v === 'inbox' ? viewInbox() : v === 'notes' ? viewNotes() : v === 'thread' ? viewThread() : v === 'sessions' ? viewSessions() : v === 'shome' ? viewSessHome() : v === 'scheduler' ? viewScheduler() : v === 'regs' ? viewRegs() : v === 'tryout' ? viewTryout() : v === 'comply' ? viewComply()
+                : v === 'inbox' ? viewInbox() : v === 'notes' ? viewNotes() : v === 'thread' ? viewThread() : v === 'sessions' ? viewSessions() : v === 'shome' ? viewSessHome() : v === 'scheduler' ? viewScheduler() : v === 'regs' ? viewRegs() : v === 'tryout' ? viewTryout() : v === 'comply' ? viewComply() : v === 'usage' ? viewUsage()
                 : v === 'setup' ? viewSetup() : v === 'guide' ? viewHowto() : viewCalendar());
   } finally { placeMemo = null; }
   syncHash();
@@ -8107,7 +8152,7 @@ const viewScope = (v = ui.view) => v === 'calendar' || v === 'mine' ? (me ? 'me'
 const VIEW_TITLE = {
   calendar: 'Calendar', setup: 'Settings', people: 'People', admin: 'Club details', sessions: 'Sessions',
   scheduler: 'Scheduler', inbox: 'Messages', thread: 'Messages', notes: 'What\'s new', mine: 'My players', formation: 'Shapes',
-  games: 'Games', regs: 'Registration', tryout: 'Tryouts', comply: 'Coach compliance', club: 'Club home', shome: 'Home', guide: 'How to'
+  games: 'Games', regs: 'Registration', tryout: 'Tryouts', comply: 'Coach compliance', usage: 'Usage', club: 'Club home', shome: 'Home', guide: 'How to'
 };
 // the Sessions view draws three of Settings' screens too, each under its own name
 const screenTitle = v => v === 'sessions' && sessSetTab() ? SESS_SET[sessSetTab()] : VIEW_TITLE[v];
@@ -8158,7 +8203,7 @@ const hasDoor = d => d === 'teams' ? !sessOnly() : (d === 'sessions' && canSessi
    same from both. */
 const doorOf = (v = ui.view) => v === 'sessions' && sessSetTab() === 'fields' ? null
   : SESSION_VIEWS.includes(v) || v === 'regs' ? 'sessions'
-  : TEAM_VIEWS.includes(v) || ['games', 'formation', 'scheduler', 'club', 'tryout', 'comply'].includes(v) ? 'teams' : null;
+  : TEAM_VIEWS.includes(v) || ['games', 'formation', 'scheduler', 'club', 'tryout', 'comply', 'usage'].includes(v) ? 'teams' : null;
 /* Where she starts, decided from where her uid appears, as navKind() decides
    Home: a family whose only children are on no team is the person the
    Sessions door is for, and opens in it. Everyone else opens in Teams. */
@@ -8275,7 +8320,7 @@ function upView(v = ui.view) {
   if (v === 'regs' && (ui.regs || {}).prog) return 'regs';
   if (v === 'tryout' && (ui.tryout || {}).prog && myTryouts().length > 1) return 'tryout';
   // the club's settings screens are Settings' Club section since build 143; the rest hang off Club home
-  if (['people', 'admin', 'scheduler', 'regs', 'comply'].includes(v)) return 'setup';
+  if (['people', 'admin', 'scheduler', 'regs', 'comply', 'usage'].includes(v)) return 'setup';
   // fields, fees and hours are Settings' screens (UX-REVIEW-2.md, 7.3); Sessions itself hangs off Club home
   if (v === 'sessions') return sessSetTab() ? 'setup' : null;
   // the Sessions door's Home is a tab's own
@@ -19136,7 +19181,9 @@ function viewSetup() {
   const fieldsTile = setTile('sesstab', 'fields', 'Fields and permits', fieldList().length ? `${fieldList().length} field${fieldList().length === 1 ? '' : 's'}, their permits and hours` : adm ? 'Where the club trains, and the permits for each' : 'Where the club trains', ' data-k="fields"');
   const shared = [
     adm ? setTile('goview', 'club', 'Club details', 'Name and badge, what parents see, teams, who owns it', ' data-v="admin"') : '',
-    adm || coachAny ? setTile('goview', 'people', 'People', adm ? `${members().length} signed in · roles and invites` : 'Who is in the club, roles and invites', ' data-v="people"') : ''
+    adm || coachAny ? setTile('goview', 'people', 'People', adm ? `${members().length} signed in · roles and invites` : 'Who is in the club, roles and invites', ' data-v="people"') : '',
+    // who opens the app and when (build 193): the admins', from either door
+    adm ? setTile('goview', 'count', 'Usage', esc(usageTileSub()), ' data-v="usage"') : ''
   ];
   const clubTiles = inSess ? [
     ...shared,
@@ -23224,6 +23271,121 @@ function complyCards() {
   }
   return out;
 }
+/* Usage (build 193): who opens the app and when, and the club in numbers,
+   for the admins. An open is a page load with the club read (noteOpen()),
+   not a tap, so the numbers say how often people come, not what they did;
+   nothing is sent anywhere but the club's own database, and nothing here
+   names a child. Counted from the day the club got build 193: there is no
+   history before it, and the screen says so. */
+const USAGE_DAYS = 28;
+const usageN = v => (Number(v) > 0 ? Number(v) : 0);
+function usageStats(today = todayStr()) {
+  const u = state.usage || {};
+  const rows = Object.entries(u).filter(([d, row]) => okDay(d) && row && typeof row === 'object' && d <= today);
+  const days = [];
+  for (let i = USAGE_DAYS - 1; i >= 0; i--) {
+    const d = addDays(today, -i), row = u[d] && typeof u[d] === 'object' ? u[d] : {};
+    const who = Object.keys(row).filter(k => usageN(row[k]));
+    days.push({ day: d, opens: who.reduce((a, k) => a + usageN(row[k]), 0), people: who.length });
+  }
+  const since = n => {
+    const from = addDays(today, -(n - 1)), who = new Set();
+    let opens = 0;
+    for (const [d, row] of rows) if (d >= from) for (const [k, v] of Object.entries(row)) if (usageN(v)) { who.add(k); opens += usageN(v); }
+    return { opens, people: who.size };
+  };
+  // each person's opens in the last thirty days
+  const per = {}, from30 = addDays(today, -29);
+  for (const [d, row] of rows) if (d >= from30) for (const [k, v] of Object.entries(row)) if (usageN(v)) per[k] = (per[k] || 0) + usageN(v);
+  const first = rows.map(([d]) => d).sort()[0] || null;
+  return { days, today: since(1), week: since(7), month: since(30), per, first };
+}
+/* When somebody last opened the app, in a reader's words: the time of day
+   while it is this week, the date after that, the year only when it is not
+   this one. */
+function openedWords(ms, now = nowMs()) {
+  if (!ms) return 'Never opened';
+  const o = new Date(ms), d = dayStr(o), t = dayStr(new Date(now));
+  const time = niceTime(pad2(o.getHours()) + ':' + pad2(o.getMinutes()));
+  if (d === t) return `Today, ${time}`;
+  if (d === addDays(t, -1)) return `Yesterday, ${time}`;
+  const n = Math.round((dateOf(t) - dateOf(d)) / 86400000);
+  if (n > 1 && n < 7) return `${WEEKDAYS[weekdayOf(d)]}, ${time}`;
+  return dayLabel(d) + (d.slice(0, 4) !== t.slice(0, 4) ? ' ' + d.slice(0, 4) : '');
+}
+// her roles in the club, one word each, for the Usage list
+function usageRole(uid) {
+  if (isAdmin(uid)) return ROLE_LABEL.admin;
+  const kinds = [...new Set(rolesHeld(uid, teams()).map(v => v.r))];
+  if (isViewer(uid)) kinds.push('viewer');
+  if ((acc().sessionCoaches || {})[uid]) kinds.push('sesscoach');
+  return kinds.map(k => ROLE_LABEL[k]).filter(Boolean).join(', ') || 'No role yet';
+}
+// the Settings tile's second line
+function usageTileSub() {
+  const s = usageStats();
+  return s.week.opens ? `${s.week.opens} open${s.week.opens === 1 ? '' : 's'} this week by ${s.week.people} ${s.week.people === 1 ? 'person' : 'people'}` : 'Who opens the app and when, and the club in numbers';
+}
+/* The club in numbers: what the club's records add up to, each a line. */
+function clubNumbers() {
+  const ts = teams(), today = todayStr();
+  const players = ts.flatMap(t => Object.values(t.players || {}).filter(p => p && p.active !== false));
+  const withFamily = players.filter(p => Object.keys(p.guardians || {}).length).length;
+  const games = Object.values(state.matches || {}).filter(m => m && m.teamId && state.teams[m.teamId]);
+  const played = games.filter(m => m.ended).length, calledOff = games.filter(m => m.called).length;
+  const toCome = games.filter(m => !m.ended && !m.called && okDay(m.date) && m.date >= today).length;
+  const entries = ts.flatMap(t => Object.values(t.events || {}).filter(e => e && !e.called));
+  const practices = entries.filter(e => e.kind === 'practice').length;
+  const registers = ts.reduce((a, t) => a + Object.keys(t.attend || {}).length, 0);
+  const answers = Object.values(state.rsvp || {}).reduce((a, items) => a + Object.values(items || {}).reduce((b, row) => b + Object.keys(row || {}).length, 0), 0);
+  const staff = k => new Set(Object.values(acc().teams || {}).flatMap(ta => Object.keys((ta || {})[k] || {}))).size;
+  const parents = members().filter(m => rolesHeld(m.uid, ts).some(v => v.r === 'parent')).length;
+  const sessions = Object.values((sess || {}).sessions || {}).filter(x => x && !x.called).length;
+  const booked = Object.values((sess || {}).booked || {}).reduce((a, row) => a + Object.values(row || {}).filter(b => b && b.st === 'in').length, 0);
+  const plans = Object.values((train || {}).practices || {}).reduce((a, x) => a + (x && typeof x === 'object' ? Object.keys(x).length : 0), 0);
+  const drills = Object.keys((train || {}).drills || {}).length;
+  const one = (n, w, ws = w + 's') => `${n} ${n === 1 ? w : ws}`;
+  return [
+    ['Teams', one(ts.length, 'team')],
+    ['Players', `${one(players.length, 'player')}${players.length ? `, ${withFamily} with a parent signed in` : ''}`],
+    ['People', `${one(members().length, 'person', 'people')}: ${Object.keys(acc().admins || {}).length} admin${Object.keys(acc().admins || {}).length === 1 ? '' : 's'}, ${staff('coaches')} head, ${staff('helpers')} assistant, ${one(staff('trackers'), 'tracker')}, ${one(parents, 'parent')}`],
+    ['Games', `${one(played, 'game')} played, ${toCome} to come${calledOff ? `, ${calledOff} called off` : ''}`],
+    ['Practices', `${one(practices, 'practice')}, ${one(entries.length - practices, 'other entry', 'other entries')}`],
+    ['Who is coming', one(answers, 'answer')],
+    ['Attendance', one(registers, 'register')],
+    ['Sessions', `${one(sessions, 'session')}, ${one(booked, 'place')} booked`],
+    ['Training', `${one(plans, 'practice plan')}, ${one(drills, 'club drill')}`]
+  ];
+}
+function viewUsage() {
+  if (!me || !isAdmin(me.uid)) return `<div class="empty"><strong>Club admins only</strong>Who opens the app is the club's admins' to see.</div>`;
+  const s = usageStats(), today = todayStr(), yest = addDays(today, -1);
+  const most = Math.max(1, ...s.days.map(d => d.opens));
+  const dayName = d => d === today ? 'Today' : d === yest ? 'Yesterday' : dayLabel(d);
+  const opens = n => `${n} open${n === 1 ? '' : 's'}`;
+  const ppl = n => `${n} ${n === 1 ? 'person' : 'people'}`;
+  const tile = (ic, head, x) => setTileInfo(ic, `${x.opens} open${x.opens === 1 ? '' : 's'}`, `${head} · ${ppl(x.people)}`);
+  const people = members().map(m => ({ ...m, role: usageRole(m.uid), n: s.per[m.uid] || 0 }))
+    .sort((a, b) => (b.seen || 0) - (a.seen || 0) || (a.name || '').localeCompare(b.name || ''));
+  const never = people.filter(p => !p.seen).length;
+  const row = p => `<div class="prow" style="grid-template-columns:1fr auto">
+      <span><span class="pname">${esc(p.name || p.email || 'Someone')}</span><span class="rowsub">${esc(p.role)}${p.at ? ' · joined ' + esc(shortDate(dayStr(new Date(p.at)))) : ''}</span></span>
+      <span class="muted" style="text-align:right">${esc(openedWords(p.seen))}${p.n ? `<br>${opens(p.n)} in 30 days` : ''}</span></div>`;
+  return `<div class="stack">
+    <h2>Usage</h2>
+    <p class="muted" style="margin-top:0">Who opens the app and when, for the club's admins. An open is the app loaded with this club on it, counted once each time, not every tap. ${s.first ? `Counting started on ${esc(shortDate(s.first))}; nothing before that was counted.` : 'Nothing counted yet: the first opens show here as people come.'} Nothing here leaves the club.</p>
+    <div class="setgrid">${tile('count', 'Today', s.today)}${tile('people', 'This week', s.week)}${tile('sched', 'Last 30 days', s.month)}</div>
+    <div class="card"><h2>Opens by day</h2>
+      <div class="plist">${s.days.slice(-14).reverse().map(d => `<div class="prow" style="grid-template-columns:1fr auto">
+        <span><span class="pname">${esc(dayName(d.day))}</span><div class="bar"><i style="width:${Math.round(100 * d.opens / most)}%"></i></div></span>
+        <span class="muted">${d.opens ? `${opens(d.opens)} · ${ppl(d.people)}` : 'none'}</span></div>`).join('')}</div></div>
+    <div class="card"><h2>People</h2>
+      <p class="muted" style="margin-top:0">${people.length ? `${ppl(s.month.people)} of ${people.length} opened the app in the last 30 days${never ? `; ${never} ${never === 1 ? 'has' : 'have'} never opened it since joining` : ''}.` : 'Nobody has signed in yet.'}</p>
+      <div class="plist">${people.map(row).join('')}</div></div>
+    <div class="card"><h2>The club in numbers</h2>
+      <dl class="facts">${clubNumbers().map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>
+  </div>`;
+}
 function viewComply() {
   if (!me || !isAdmin(me.uid)) return `<div class="empty"><strong>Club admins only</strong>Coaching records are the club's admins'.</div>`;
   const rows = complyRows(), t = complyTally(rows);
@@ -27274,6 +27436,7 @@ function uiToHash() {
   if (ui.view === 'regs') return '#/club/registrations';
   if (ui.view === 'tryout') return '#/club/tryouts';
   if (ui.view === 'comply') return '#/club/compliance';
+  if (ui.view === 'usage') return '#/club/usage';
   if (ui.view === 'mine') return '#/my-players';
   if (ui.view === 'inbox') return '#/messages';
   if (ui.view === 'notes') return '#/whats-new';
@@ -27294,7 +27457,7 @@ function hashToUi() {
      address (build 102): All teams on the Calendar. #/my-calendar is what My
      calendar's feed links back to. */
   if (p[0] === 'club' && (p[1] === 'calendar' || p[1] === 'schedule')) { ui.view = 'calendar'; ui.calSel = 'club'; return true; }
-  if (p[0] === 'club') { ui.view = p[1] === 'settings' ? 'admin' : p[1] === 'people' ? 'people' : p[1] === 'planner' || p[1] === 'scheduler' ? 'scheduler' : p[1] === 'registrations' ? 'regs' : p[1] === 'tryouts' ? 'tryout' : p[1] === 'compliance' ? 'comply' : 'club'; return true; }
+  if (p[0] === 'club') { ui.view = p[1] === 'settings' ? 'admin' : p[1] === 'people' ? 'people' : p[1] === 'planner' || p[1] === 'scheduler' ? 'scheduler' : p[1] === 'registrations' ? 'regs' : p[1] === 'tryouts' ? 'tryout' : p[1] === 'compliance' ? 'comply' : p[1] === 'usage' ? 'usage' : 'club'; return true; }
   if (p[0] === 'my-players') { ui.view = 'mine'; return true; }
   if (p[0] === 'games') { ui.view = 'games'; return true; }
   if (p[0] === 'my-calendar') { ui.view = 'calendar'; ui.calSel = 'mine'; return true; }

@@ -80,11 +80,11 @@ console.log('--- the sections, by whose they are ---');
   check('— titled Settings', A.rendered('#titlebar').includes('<span>Settings</span>'), true);
   let a = acts(h);
   // the Teams door's club rows (the owner, 2026-10-25); the Sessions door's are pinned in test/doors.js
-  for (const x of ['signinsheet', 'goview:admin', 'goview:people', 'goview:comply', 'scheduler', 'sesstab:fields', 'clubdrills', 'tpllist:clubTpl', 'bulkimport', 'backupsheet', 'readysheet', 'aboutsheet', 'editteam:t1', 'formations', 'trackcfg', 'sharesheet'])
+  for (const x of ['signinsheet', 'goview:admin', 'goview:people', 'goview:usage', 'goview:comply', 'scheduler', 'sesstab:fields', 'clubdrills', 'tpllist:clubTpl', 'bulkimport', 'backupsheet', 'readysheet', 'aboutsheet', 'editteam:t1', 'formations', 'trackcfg', 'sharesheet'])
     check(`— ${x}`, a.has(x), true);
   check('— no registrations, session fees or coach hours in Teams', ['goview:regs', 'sesstab:fees', 'sesstab:hours'].some(x => a.has(x)), false);
   A.ui.door = 'sessions'; A.render(); a = acts(A.rendered());
-  for (const x of ['goview:regs', 'sesstab:fields', 'sesstab:fees', 'sesstab:hours', 'goview:people', 'backupsheet', 'aboutsheet'])
+  for (const x of ['goview:regs', 'sesstab:fields', 'sesstab:fees', 'sesstab:hours', 'goview:people', 'goview:usage', 'backupsheet', 'aboutsheet'])
     check(`— in Sessions: ${x}`, a.has(x), true);
   check('— in Sessions: no Scheduler, compliance or team set-up', ['scheduler', 'goview:comply', 'formations', 'editteam:t1'].some(x => a.has(x)), false);
   A.ui.door = 'teams';
@@ -93,7 +93,7 @@ console.log('--- the sections, by whose they are ---');
 
   h = as('jaz');
   check('a coach: You, This team, Club (People), About', heads(h), 'You · This team · Club · About');
-  check('— People, the Scheduler (read-only, her teams lit; build 163) and nothing else of the club\'s', [...acts(h)].filter(x => /^goview:(admin|people|regs|comply)$|^scheduler$|^bulkimport$|^clubdrills$/.test(x)).sort().join(), 'goview:people,scheduler');
+  check('— People, the Scheduler (read-only, her teams lit; build 163) and nothing else of the club\'s', [...acts(h)].filter(x => /^goview:(admin|people|regs|comply|usage)$|^scheduler$|^bulkimport$|^clubdrills$/.test(x)).sort().join(), 'goview:people,scheduler');
   check('— her team\'s set-up, to change', ['editteam:t1', 'formations', 'trackcfg'].every(x => acts(h).has(x)), true);
   check('— no backup or readiness', /backupsheet|readysheet/.test(h), false);
   check('— My drills, since she plans', acts(h).has('mydrills'), true);
@@ -113,7 +113,7 @@ console.log('--- the sections, by whose they are ---');
   h = as('mum', 'setup');
   check('a parent: You and About (UX-REVIEW-3.md, 18.1)', heads(h), 'You · About');
   check('— one quiet row: no version line, database or account id on the page', /page and code agree|Database|Account id|data-act="hardreload"/.test(h), false);
-  check('— no team, no club, no links to manage', /data-act="(sharesheet|editteam|formations|trackcfg|scheduler|bulkimport)"|data-v="(admin|people|regs|comply)"/.test(h), false);
+  check('— no team, no club, no links to manage', /data-act="(sharesheet|editteam|formations|trackcfg|scheduler|bulkimport)"|data-v="(admin|people|regs|comply|usage)"/.test(h), false);
   check('— and no child\'s name', /Rosa|Mia/.test(h), false);
   check('— and no drills of her own in a real club (UX-REVIEW-2.md, 7.3)', acts(h).has('mydrills') || /data-act="sesstab"/.test(h), false);
 
@@ -162,7 +162,7 @@ console.log('\n--- nothing twice ---');
 {
   let h = as('boss', 'admin');
   check('Club details is the club\'s own: details, what parents see, who runs it, teams, retire', ['saveorg', 'rosteropen', 'newteam', 'retireclub'].every(x => h.includes(`data-act="${x}"`)), true);
-  check('— and nothing a Settings row opens', /data-act="(schedule|scheduler|bulkimport|clubdrills|people|preplockdown|sesstab)"|data-v="(regs|comply)"/.test(h), false);
+  check('— and nothing a Settings row opens', /data-act="(schedule|scheduler|bulkimport|clubdrills|people|preplockdown|sesstab)"|data-v="(regs|comply|usage)"/.test(h), false);
   check('— titled Club details, with no second heading', A.rendered('#titlebar').includes('<span>Club details</span>') && !/<h2>Club admin<\/h2>/.test(h), true);
   h = as('jaz', 'roster');
   check('Squad: one line to the team\'s settings', /data-act="goview" data-v="setup"/.test(h), true);
@@ -175,7 +175,7 @@ console.log('\n--- nothing twice ---');
 
 console.log('\n--- the way back ---');
 {
-  for (const v of ['people', 'admin', 'regs', 'comply', 'scheduler']) {
+  for (const v of ['people', 'admin', 'regs', 'comply', 'usage', 'scheduler']) {
     as('boss', v); A.click({ act: 'navback' });
     check(`${v}: back to Settings`, A.ui.view, 'setup');
     // one way up: the arrow, never a second Back of the screen's own going somewhere else

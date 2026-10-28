@@ -48,6 +48,7 @@ secretary already has.
 | A change the club turned down | *That didn't save* | refused by the database, permission denied |
 | The tutorial (build 192): what you do here, step by step, picked for your role | **How to** (the screen, under More as *How to use TeamPlayHQ*; a step's button *Open Home*, *Open Settings*…) | Tutorial, Guide, Help, Walkthrough, Onboarding, Tour |
 | The end of a game | **Full time** (*FT* only where there is no room: the game header, a list's score cell, the feed's time column; UX-REVIEW-3.md, 16.10) | Final |
+| Who opens the app and when, and the club in numbers, for admins (Settings → Club; build 193) | **Usage** (an **open** is the app loaded with the club on it) | Analytics, Stats (a game's), Activity, Logins, Sessions (a visit; it is a 1-1), Page views |
 
 ## Never on screen
 

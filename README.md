@@ -348,6 +348,12 @@ Any admin could once take every other admin away and have the club to herself. A
 
 What an owner does not stop: an admin can still delete teams and games. The way back from that is the database's daily backups (SECURITY.md, SEC-7).
 
+## Usage
+
+Settings → Club → **Usage** (admins only; build 193) says who opens the app and when, and what the club's records add up to: opens today, this week and over the last thirty days with how many people they were, the last fourteen days one line each, every person with when she last opened the app and how often in the last thirty days (and who has never opened it since joining), and the club in numbers (teams, players and how many have a parent signed in, people by role, games played and to come, practices, answers, registers, sessions and places booked, plans and drills).
+
+An open is the app loaded with the club on it, counted once each time, not every tap: each phone stamps its own `members/{uid}/seen` and adds one to its own `usage/{day}/{uid}` (hers alone to write, the admins' to read; rules version 39), straight to the database and never through the outbox, so a phone with no signal counts nothing. Counting starts the day a club gets build 193; nothing before it was counted, and nothing is sent anywhere but the club's own database. The Firebase console's Authentication page lists every account's last sign-in independently of this.
+
 ## The database rules
 
 **One file, for every club: [`database.rules.json`](database.rules.json).
@@ -738,6 +744,8 @@ orgs/{code}/org/venues/{fieldId}
                                     { id, name, address, pitches, surface, lights, notes, parts,
                                       permits: { id: { id, days: [0..6], start, end, from, until, ref, note } } }
 orgs/{code}/org/money               the currency sign, '$' by default
+orgs/{code}/usage/{day}/{uid}       how many times she opened the app that day (hers to write, admins' to read)
+orgs/{code}/members/{uid}           { name, email, at, seen }               // seen: when she last opened the app
 ```
 
 Stints are append-only events rather than running totals, which is what makes the Veo step realistic later: a timestamped sub log lines up directly with a recording's timeline, and positions over time are already the skeleton of a birds-eye reconstruction.

@@ -780,6 +780,16 @@
             }
           }
         },
+        "usage": {
+          ".read": "auth != null && root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists()",
+          "$day": {
+            "$uid": {
+              ".read": "auth != null && $uid === auth.uid",
+              ".write": "auth != null && $uid === auth.uid && root.child('orgs/' + $code + '/access/index/' + auth.uid).exists()",
+              ".validate": "$day.matches(/^20[0-9][0-9]-[01][0-9]-[0-3][0-9]$/) && newData.isNumber() && newData.val() >= 1 && newData.val() <= 100000"
+            }
+          }
+        },
         "roster": {
           ".read": "auth != null && ((!root.child('orgs/' + $code + '/access/index').exists() && $code.beginsWith('test-')) || root.child('orgs/' + $code + '/access/index/' + auth.uid).exists())",
           "$tid": {
@@ -881,7 +891,7 @@
     },
     "rulesVersion": {
       ".read": true,
-      ".write": "newData.isNumber() && newData.val() === 38"
+      ".write": "newData.isNumber() && newData.val() === 39"
     },
     "public": {
       "$share": {

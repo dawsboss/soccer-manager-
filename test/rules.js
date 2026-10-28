@@ -2675,6 +2675,30 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
     delete ORGC.comply;
   }
 
+  /* Usage (build 193, rules version 39): each person counts her own opens
+     for the day and stamps when she last opened; only the admins read it. */
+  console.log('\n--- a club on orgs/: who opens the app ---');
+  {
+    ORGC.usage = { '2026-10-10': { oc: 2 } };
+    w('a coach counts her own opens for the day', OC, O + 'usage/2026-10-10/oc', 3, true);
+    w('— a family too', OM, O + 'usage/2026-10-10/om', 1, true);
+    w('— and stamps when she last opened', OM, O + 'members/om/seen', NOW, true);
+    w('— not somebody else\'s count', OC, O + 'usage/2026-10-10/om', 1, false);
+    w('— not under a day that is not one', OC, O + 'usage/today/oc', 1, false);
+    w('— not words', OC, O + 'usage/2026-10-10/oc', 'lots', false);
+    w('— not nought', OC, O + 'usage/2026-10-10/oc', 0, false);
+    w('— never a whole day at once, even the admin', OA, O + 'usage/2026-10-10', { oc: 1 }, false);
+    w('— nor the admin writing a coach\'s', OA, O + 'usage/2026-10-10/oc', 9, false);
+    w('a stranger counts nothing', RANDO, O + 'usage/2026-10-10/rando', 1, false);
+    r('the admin reads it all', OA, O + 'usage', true);
+    r('a coach reads her own day\'s count', OC, O + 'usage/2026-10-10/oc', true);
+    r('— not the list', OC, O + 'usage', false);
+    r('— nor another\'s', OC, O + 'usage/2026-10-10/om', false);
+    r('a family reads none of it', OM, O + 'usage', false);
+    r('a stranger reads none of it', RANDO, O + 'usage', false);
+    delete ORGC.usage;
+  }
+
   /* A child in the club on no team books training sessions (AUTH.md,
      *Sessions for a child on no team*): as `club`, her family found on her
      club record, once the club has let her in. */

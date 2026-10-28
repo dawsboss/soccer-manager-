@@ -169,6 +169,8 @@ try {
     ui.view='regs'; ui.regs={prog:'tr',tab:'scores'}; render(); ui.regs={prog:'tr',tab:'list'}; render(); ui.regs={};
     console.log('  rendered the scores and list of a tryout');
     ui.view='comply'; render(); ui.view='club'; render(); console.log('  rendered coach compliance, and its cards on Club home');
+    state.usage={'2026-09-11':{own:2},'2026-09-12':{own:1,x:4}}; state.access.members={own:{name:'Own',at:1,seen:Date.now()},x:{name:'Ex',at:1}};
+    ui.view='usage'; render(); state.usage={}; render(); console.log('  rendered usage, with opens and with none');
     state.programs={}; state.tryBibs={}; state.evals={}; state.regs={}; state.comply={}; state.access.teams={};
     ui.view='schedule'; ui.sched={}; render(); console.log('  rendered the club schedule (the calendar, every team)');
     ['all','pending','coach','tracker','parent'].forEach(f=>{ui.peopleFilter=f; render();});

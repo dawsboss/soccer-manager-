@@ -197,6 +197,7 @@ const EXPORTS = `{
   clubKids, kidOf, kidFamily, mayEditKid, syncChildren, childCheck, sheetKid, kidCards, childFrom, splitName, careCard, sheetPlayer, myChildren, playerById, looseKids, gotsportCsv, csvCell,
   bibScores, bibsToGive, tidyBibs, myTryouts, TRY_CRIT, pendingList,
   complyState, complyFlags, complyRows, complyRead,
+  usageStats, openedWords, usageRole, clubNumbers, noteOpen, layMyOpen,
   get train() { return train }, set train(v) { train = v }, get trainState() { return trainState },
   /* the club's drills and a coach's own */
   SHELF, SHELVES, LIB_ACTS, TPL_ACTS, tplItems, findTpl, normTemplate, canCurateTpl, normDrill, cardOf, findDrill, drillOrigin, drillPool, shelfItems, canCurate, shareTeam,

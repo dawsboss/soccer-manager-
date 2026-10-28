@@ -460,6 +460,20 @@ does the bookkeeping, not that the phone works offline first.
 - **With a server:** a trigger on a registration deleted takes its bib's
   entry and scores at once, with no admin's phone needed.
 
+### Who opens the app
+- **Now:** each phone counts its own opens (build 193): once per page load
+  with the club read, `noteOpen()` stamps `members/{uid}/seen` and adds one
+  to `usage/{day}/{uid}`, straight to the database and never through the
+  outbox, and the admins' Usage screen (Settings → Club) adds it up. A phone
+  with no signal, or a club whose rules are older than version 39, counts
+  nothing and says nothing. Old days are never pruned; at a club's size
+  they are small.
+- **With a server:** sign-in itself is the record (Firebase Auth keeps each
+  account's last sign-in and creation time), so a function could list a
+  club's members' last sign-ins with no phone writing anything, prune days
+  older than a year, and say how long people stay, which an open count
+  cannot.
+
 ### Backups and imports
 - **Moved (build 135): a bulk import is applied by the server.** The phone
   plans it as before and sends the planned writes in one ask
