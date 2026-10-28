@@ -22,6 +22,7 @@ node shoot.js quiet.json mum shots/mum-quiet family   # personas: mum dad nan ki
 node shoot.js live.json mum shots/mum-live live       # tours: family live staff landing anon scheduler subs
 node shoot.js live.json jaz shots/jaz-subs subs       # the coach subbing: the list, the pitch, and the sheet either opens
 node gen-club.js quiet quiet.json fields && node shoot.js quiet.json boss shots/boss-sched scheduler   # the Scheduler's board, with fields and permits on the club
+node shoot.js quiet.json boss shots/boss-admin admin     # the admin's round (UX-REVIEW-4.md): every Settings tile in both doors, adding and changing a game
 node render-states.js && node shoot-states.js shots/onboarding   # invite, team link, registration, share pages
 python3 index.py                        # INDEX.md: every capture by persona and step
 node clips.js clips                     # a silent clip per How to topic, walking the real screens (build 192): needs ffmpeg; seeds both clubs itself; clips/INDEX.md lists them
