@@ -238,6 +238,8 @@ console.log('\n--- the controls a parent taps: her answer its own, nothing under
   check('the avatar is 36px', px(bodyOf('.avatar'), 'width') + ' ' + px(bodyOf('.avatar'), 'height'), '36 36');
   /* 20px of words (14px at 1.45) and padding to 40, given back by a negative
      margin so nothing moves */
+  // a link on the lock card's white body is ink: .linkbtn is white for the dark band, and Start a new club vanished into the card (UX-REVIEW-4.md, 23.3)
+  check('a link in the lock card\'s white body is drawn in ink, not the dark band\'s white', /\.auth-card-body \.linkbtn\{[^}]*color:var\(--field-deep\)/.test(css), true);
   for (const sel of ['.textbtn', '.linkbtn', '.linkbtn.dark', '.tbsub', '.legal a'])
     check(`${sel}: 40px to tap, the space given back`, padY(bodyOf(sel)) + 20 >= 40 && /margin:-/.test(bodyOf(sel)), true);
   check('the sync badge, a button now, reaches 40px past its pill', /inset:-9px/.test(bodyOf('.sync::before')) && /border:0/.test(bodyOf('.sync')), true);

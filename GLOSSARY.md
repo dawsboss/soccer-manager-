@@ -57,6 +57,7 @@ be said (the rules file an admin pastes, from Check readiness) is said in that o
 which the suite reads separately and allows.
 
 - `Org admin`
+- `Planner`
 - `Firebase`
 - `README`
 - `lookup table`

@@ -626,6 +626,8 @@ function sideline() {
     as('trk'); A.ui.gameView = 'track'; A.click({ act: 'start' }); H.clock.advance(5 * MIN);
     as('jaz'); A.ui.gameView = 'subs'; html();
     check('being played, the same pill ticks on the coach\'s Subs', /class="ghclock" data-live="ghead" data-mid="g1">5:00</.test(T()), true);
+    // once the game is on, nobody is going to plan it: the heads-up is one line, not a paragraph over the list she subs from (UX-REVIEW-4.md, 25.7)
+    check('— and with no plan, the heads-up is one line once the game is on', /id="subsdue"/.test(html()) && /No planned subs for this game/.test(html()) && !/Plan the game on Lineup and lock it in/.test(html()), true);
     A.ui.gameView = 'stats'; html();
     check('and on Stats', /data-live="ghead" data-mid="g1">5:00</.test(T()), true);
     A.ui.gameView = 'subs';

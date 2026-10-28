@@ -114,6 +114,24 @@ console.log('--- who has which door, and where each starts ---');
   check('signed out of a club with an admin: no bar, no title, no door', bar() + title(), '');
 }
 
+console.log('\n--- the door said once (UX-REVIEW-4.md, 24.1) ---');
+{
+  // the pill at the top swaps the whole bar, and nothing on the way in said so: one line the first time, put away with Got it, per account
+  as('mum', 'shome');
+  check('the first time in Sessions, one line says what it is and how back to Teams', /data-role="door"/.test(page()) && /<b>Teams<\/b> side/.test(page()) && /data-act="roleok" data-v="door"/.test(page()), true);
+  A.click({ act: 'roleok', v: 'door' });
+  check('— Got it puts it away', /data-role="door"/.test(page()), false);
+  as('mum', 'shome');
+  check('— and it stays away on the next open', /data-role="door"/.test(page()), false);
+  as('jaz', 'shome');
+  check('— per account: the coach gets hers', /data-role="door"/.test(page()), true);
+  A.click({ act: 'roleok', v: 'door' });
+  as('lou', 'shome');
+  check('— and a family who starts in Sessions gets it too: she has the Teams door, and the pill, as well', /data-role="door"/.test(page()), true);
+  as('trk', 'sessions');
+  check('— a tracker, who has no door at all, never sees it', /data-role="door"/.test(page()), false);
+}
+
 console.log('\n--- the same bar for everyone inside a door ---');
 {
   // Lou has Messages too: her child is in Jaz's session, so she may write to Jaz (DOORS.md, Messages: people, not teams)

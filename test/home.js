@@ -283,7 +283,7 @@ const club = () => ({
     check('— on her daughter\'s team too: she is staff, not a family', coachy(d), true);
     check('an admin: the coach\'s Season', coachy(as('boss', 'season')), true);
     check('a tracker: the coach\'s Season', coachy(as('trk', 'season')), true);
-    check('— the Minutes screen, for the coach', /<h2>Minutes<\/h2>/.test(as('jaz', 'minutes')) && /Ella Fitzgerald/.test(A.rendered()), true);
+    check('— the Minutes screen, for the coach', /<h2>Minutes(?: <button class="infobtn"[^>]*>i<\/button>)?<\/h2>/.test(as('jaz', 'minutes')) && /Ella Fitzgerald/.test(A.rendered()), true);
     check('— and a family sent to it lands on her own Season', (as('mum', 'minutes'), A.ui.view) + ' ' + /<b style="font-size:18px">Rosa Delgado<\/b>/.test(A.rendered()), 'season true');
   }
 
@@ -425,6 +425,19 @@ const club = () => ({
     check('a link (or a reload) keeps the screen it names', B.ui.view, 'calendar');
     B = cached('jaz', { view: 'roster' });
     check('staff keep what was open', B.ui.view, 'roster');
+    /* A staff phone with nothing kept is on its first open (accepting an
+       invite reloads the page): it lands on Home too, of a team she works
+       on, never on the Calendar and never on the first team by name
+       (UX-REVIEW-4.md, 23.2: a new coach opened on everyone's calendar, then
+       on another age group's team with a card saying it was not hers). */
+    const first = (uid, extra = {}) => H.loadApp({ firebase: makeFakebase(), config: CONFIG, hash: extra.hash, storage: { 'sm.workspace': 'CLUB', 'sm.me': JSON.stringify({ uid, name: uid }), 'sm.data.v1:CLUB': JSON.stringify(club()) } });
+    B = first('jaz');
+    check('a coach\'s first open on a phone lands on Home, of the team she coaches, not the first by name', B.ui.view + ' ' + B.ui.teamId, 'season t1');
+    check('— the Home tab lit', /data-tab="home" aria-current="true"/.test(B.rendered('#tabbar')), true);
+    B = first('jaz', { hash: '#/calendar' });
+    check('— a link on a first open still keeps its screen', B.ui.view, 'calendar');
+    B = first('boss');
+    check('an admin\'s first open lands on Club home, her teams', B.ui.view, 'club');
 
     // a new phone: who she is here as is known only once the club has been read
     const fresh = async tapFirst => {

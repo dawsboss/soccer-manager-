@@ -614,7 +614,7 @@ function plan(extra = {}, X = A) {
     D.state.access.teams.t1.coaches = {};
     D.syncCoachIndex('jaz');
     check('a coach removed from her only team is taken out', fbk.record.removes.includes(OB + '/access/coachIndex/jaz'), true);
-    const rows = D.readiness().find(r => /coach index/.test(r.label));
+    const rows = D.readiness().find(r => /listed for practice plans/.test(r.label));
     check('readiness reports it', !!rows, true);
   }
 

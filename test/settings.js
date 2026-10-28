@@ -151,6 +151,13 @@ console.log('\n--- Advanced: an admin\'s, in a sheet ---');
   A.closeSheet();
   A.click({ act: 'readysheet' });
   check('Check readiness opens the list, with its fix', /Check readiness/.test(sheet()) && /data-act="preplockdown"/.test(sheet()), true);
+  // the app's own owner is the developer's to set, never a club admin's to fix: her list has no such row and her tally never counts it (UX-REVIEW-4.md, 25.6)
+  check('— and no row about the app\'s own owner for a club admin', /An app owner exists|appOwners/.test(sheet()), false);
+  A.closeSheet();
+  // what is still to set up is said first on Settings, not only at the foot under Advanced (26.3); the rules row waits for a signal and is not counted until checked
+  const crosses = A.readiness().filter(x => !x.ok && !/not checked yet/.test(x.detail)).length;
+  check('what is still to set up is a card at the top of Settings with Check readiness in it, when there is any', (crosses > 0) === /still to set up[\s\S]*?data-act="readysheet"/.test(as('boss')), true);
+  check('— counted as the sheet counts it', crosses > 0 ? new RegExp(crosses + ' thing').test(as('boss')) : true, true);
   for (const uid of ['jaz', 'trk', 'mum']) {
     as(uid); A.dom.node('#sheet').innerHTML = '';
     A.click({ act: 'backupsheet' }); A.click({ act: 'readysheet' });

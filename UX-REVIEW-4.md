@@ -14,6 +14,14 @@ door (`boss-setup`), and a club with no teams in it yet (`empty`), which is what
 was checked against the capture and the code it names. Nothing UX-REVIEW-3.md's build order fixed
 is repeated.
 
+*Built in build 193, the same day: every finding in sections 23, 25 and 26 but two, and 24.1's
+explanation. Left: hiding the Sessions pill where the club has nothing behind it (24.1 (a)), which
+is the owner's call, since DOORS.md gives every family both doors; Settings' *This team* following
+the team she chose to look at (23.4), which `test/settings.js` pins on purpose (a coach reads another
+team's set-up there) and which 23.2 covers on a new phone; and the optional 26.2. The re-capture
+after the build is what the owner has; the checks in section 29 hold each fix. The three extra walks
+are still outside `shoot.js`.*
+
 ## The short answer
 
 **For a parent who arrives by invite or team link, the app is not confusing.** It is one of the

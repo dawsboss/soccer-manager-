@@ -90,6 +90,13 @@ console.log('--- which topics each kind of account gets ---');
   check('— the coach\'s has', A.howtoTopics().find(t => t.id === 'sideline').steps.some(s => /^Subs:/.test(s.say)), true);
   check('every topic has a title, a line and at least three steps', A.HOWTO.every(t => t.title && t.lead && t.steps.length >= 3), true);
   check('every id is unique', new Set(A.HOWTO.map(t => t.id)).size, A.HOWTO.length);
+  // a step names a button by the word on the screen: Live's follow button is Buzz me (UX-REVIEW-3.md, 16.4), and the guide said Notify me (UX-REVIEW-4.md, 25.4)
+  check('Follow a game names the button as Live does: Buzz me, never Notify me', A.HOWTO.find(t => t.id === 'follow').steps.some(s => /Buzz me/.test(s.say)) && !A.HOWTO.some(t => t.steps.some(s => /Notify me/.test(s.say))), true);
+  // the door switch is explained to whoever has it (UX-REVIEW-4.md, 24.1), and to nobody else
+  as('mum');
+  check('a parent\'s Finding your way around says what the Sessions pill does', A.howtoTopics().find(t => t.id === 'around').steps.some(s => /Sessions or Teams, switches/.test(s.say)), true);
+  as('trk');
+  check('— a tracker, who has no door, is not told about one', A.howtoTopics().find(t => t.id === 'around').steps.some(s => /Sessions or Teams, switches/.test(s.say)), false);
 }
 
 /* ---------------- every page, as every role ---------------- */

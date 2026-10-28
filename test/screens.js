@@ -135,7 +135,7 @@ const club = () => ({
     for (let i = 3; i <= 6; i++) delete A.state.matches['g' + i];
 
     h = as('jaz', 'minutes');
-    check('Minutes: every player against her plan, the furthest behind first', /<h2>Minutes<\/h2>/.test(h) && h.indexOf(ROSA) < h.indexOf(MIA), true);
+    check('Minutes: every player against her plan, the furthest behind first, with short and over explained by an info button (build 193)', /<h2>Minutes <button class="infobtn"[^>]*data-k="shortover"[^>]*>i<\/button><\/h2>/.test(h) && h.indexOf(ROSA) < h.indexOf(MIA), true);
     check('— at its own address', A.uiToHash(), '#/team/t1/minutes');
     h = as('jaz', 'attend');
     check('Attendance: the register', /<h2>Attendance<\/h2>/.test(h) && /data-act="navback"/.test(title()), true);
@@ -197,7 +197,7 @@ const club = () => ({
     let h = as('jaz', 'game', live(), () => { A.ui.matchId = 'g2'; A.ui.gameView = 'subs'; });
     check('twenty minutes in, a player on since kick-off is on pace: plain', /data-pid="p1"[\s\S]*?<span class="diff even">20 short<\/span>/.test(h), true);
     check('one on the bench the whole time is behind: orange', /data-pid="p3"[\s\S]*?<span class="diff owed">40 short<\/span>/.test(h), true);
-    check('the spot button says the spot alone', /class="lrspot" type="button" data-act="switchpos" data-pid="p1" aria-label="Set her spot">\s*<span>Spot<\/span><\/button>/.test(h), true);
+    check('the spot button says the spot alone, and No spot when there is none', /class="lrspot" type="button" data-act="switchpos" data-pid="p1" aria-label="Set her spot">\s*<span>No spot<\/span><\/button>/.test(h), true);
     check('— no word stacked under it', /lrspot-hint/.test(h), false);
     h = as('jaz', 'game', club(), () => { A.ui.matchId = 'g2'; A.ui.gameView = 'subs'; });
     check('before kick-off nobody is orange', /diff owed/.test(h), false);
@@ -267,6 +267,23 @@ const club = () => ({
     A.me = null; A.render();
     check('signed out on a locked club: Sign in to see this club', /Sign in to see this club/.test(A.rendered()), true);
     A.denied = false;
+  }
+
+  console.log('\n--- a club with no teams yet (UX-REVIEW-4.md, 23.1) ---');
+  {
+    /* Until build 193 this named the club's code and told her to check its
+       spelling, from the days a coach typed one into a box: the first thing
+       anyone who tapped Start a new club read was a warning about a code she
+       never saw. */
+    const empty = () => { const s = club(); s.teams = {}; s.matches = {}; return s; };
+    let h = as('boss', 'season', empty());
+    check('an admin is told to add a team, with the button, and never to check a code', /No teams yet/.test(h) && /data-act="newteam"/.test(h) && !/<code>|stored under|case sensitive|order matters/.test(h), true);
+    h = as('boss', 'calendar', empty());
+    check('— the Calendar says the same', /No teams yet/.test(h) && !/<code>|stored under/.test(h), true);
+    h = as('jaz', 'season', empty());
+    check('a coach is told the admin adds the teams, with no button she cannot use', /No teams yet/.test(h) && /club admin adds the teams/.test(h) && !/data-act="newteam"/.test(h), true);
+    h = as('boss', 'games', empty());
+    check('Games with no teams tells the admin to add a team first, not to wait for the coach (23.5)', /Add a team first/.test(h) && !/once the coach adds them/.test(h), true);
   }
 
   H.summary('each screen on its own');

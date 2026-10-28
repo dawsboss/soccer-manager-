@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '192';
+const BUILD = '193';
 const BUILT = '2026-10-25';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -47,6 +47,8 @@ const SANDBOX_PREFIX = 'test-';
    nothing else, so a parent can never touch the team or the game. */
 let state = { teams: {}, matches: {}, access: {}, rsvp: {}, children: {}, care: {}, teamCare: {}, programs: {}, waivers: {}, regs: {}, agreed: {} };
 let ui = { view: 'calendar', door: null, gameView: 'subs', teamId: null, matchId: null, dragging: false, editFid: null, sortBy: 'need', plan: null, snapAt: null, snapSid: null };
+// whether this phone kept a screen and a team from last time (sm.ui.v1); with none, it is on its first open and lands on Home (landNow)
+let uiRemembered = false;
 let lastLog = [];
 let lastScreen = null;   // the screen render() last drew, so a redraw of the same one keeps its scroll
 
@@ -475,7 +477,7 @@ function loadLocal() {
     const d = JSON.parse(localStorage.getItem(dataKey()) || 'null');
     if (d) state = { teams: d.teams || {}, matches: d.matches || {}, access: d.access || {}, rsvp: d.rsvp || {}, children: d.children || {}, care: d.care || {}, teamCare: d.teamCare || {}, programs: d.programs || {}, waivers: d.waivers || {}, regs: d.regs || {}, agreed: d.agreed || {} };
     const u = JSON.parse(localStorage.getItem(LS_UI) || 'null');
-    if (u) Object.assign(ui, u);
+    if (u) { Object.assign(ui, u); uiRemembered = true; }
     /* Before build 61 'live' was the coach's subs screen. Someone who left a
        game open on it expects to come back to the same screen, not the feed
        that took the name. */
@@ -1390,8 +1392,9 @@ function sheetPending() {
       <button class="btn quiet wide" data-act="closesheet">Done</button>`, true);
     return;
   }
-  openSheet(`<h3>Not saved to the club yet</h3>
-    <p class="muted" style="margin-top:0">${list.length} change${list.length === 1 ? ' is' : 's are'} on this phone and nowhere else${r.length ? `, ${r.length} of them refused by the club's database` : ''}. They stay here, and are sent again every time this phone connects. Nothing is dropped unless you drop it.</p>
+  // titled with the badge's own words, so one state has one name (UX-REVIEW-4.md, 26.5)
+  openSheet(`<h3>${esc(syncWords()[1])}</h3>
+    <p class="muted" style="margin-top:0">${list.length} change${list.length === 1 ? ' is' : 's are'} on this phone and nowhere else${r.length ? `, ${r.length} of them refused by the club` : ''}. ${list.length === 1 ? 'It stays here, and is' : 'They stay here, and are'} sent again every time this phone connects. Nothing is dropped unless you drop it.</p>
     ${r.length ? `<p class="muted">A refusal usually means the club's set-up is out of date (${canAdmin() ? 'Check readiness, under Settings → Advanced, says what to do' : 'the club admin can bring it up to date'}), or this account is no longer a coach of that team.</p>` : ''}
     <div class="plist">${list.slice(0, 40).map(([label, refused]) => `<div class="prow" style="grid-template-columns:1fr auto"><span class="pname">${esc(label)}</span>${refused ? '<span class="tag wait">refused</span>' : '<span class="tag">waiting</span>'}</div>`).join('')}</div>
     ${list.length > 40 ? `<p class="muted">…and ${list.length - 40} more.</p>` : ''}
@@ -1427,6 +1430,8 @@ function syncWords() {
 function paintSync() {
   const b = $('#syncBadge'); if (!b) return;
   [b.dataset.state, b.textContent] = syncWords();
+  // a phone with no club has nothing to sync: "Not synced" read as a fault on a phone that had done nothing yet (UX-REVIEW-4.md, 23.7)
+  b.hidden = !!fbConfig().apiKey && !wsCode();
   const n = fb ? pendingCount() : 0, r = fb ? refusedCount() : 0;
   /* Its twin on the game header (build 144), where the brand row has stepped
      aside: drawn only while there is something to say at the sideline (owed,
@@ -1741,7 +1746,9 @@ const INFO = {
   calcopy: ['A copy, not a subscription', 'Everything still to come, as a file your phone\u2019s calendar opens. It is a copy: if a time changes later, add it again. Each entry replaces its earlier self in calendars that allow it.'],
   calfeed: ['A calendar that follows every change', 'A calendar app can follow this club by itself, with no copy to add again, once the club\u2019s calendar feed is set up. That is done once, by whoever set the club up.'],
   rosteropen: ['What a parent\u2019s phone sees', 'Shirt numbers or names is for the screen only: a parent\u2019s phone still holds the players it reads, as it always has. Coaches, trackers and admins always see names.'],
-  rating: ['The dots beside each player', 'The coach\u2019s own rating of a player, 1 to 5, set on her card. It only ever decides how a drafted lineup spreads the stronger players across the game; nobody but the team\u2019s coaches and the club\u2019s admins sees it.'],
+  shortover: ['Short and over', 'Each player’s minutes against her target for this game: short is still to play, over is past it. Targets are set on Lineup (Set targets); with none set, everyone is aimed at an equal share of the game.'],
+  calsync: ['A calendar that follows the team', 'Subscribe once and every change reaches your calendar by itself. Apple and Outlook check about every hour; Google keeps its own pace, often several hours. The address shows practices as well as games, never names. It is the team’s, not one person’s: replace it when someone leaves the team, or it keeps reaching them. Outlook: Add calendar → From internet, and paste the address.'],
+  rating: ['The dots beside each player','The coach\u2019s own rating of a player, 1 to 5, set on her card. It only ever decides how a drafted lineup spreads the stronger players across the game; nobody but the team\u2019s coaches and the club\u2019s admins sees it.'],
   snapshots: ['How a lineup is planned', 'A plan is a few pictures of the pitch: who plays where at kick-off, then who is where after each change. Start with kick-off, then add one for every time you mean to make subs: half-time, every ten minutes, whatever suits. With no shape there are no positions to plan around, so a shape comes first.']
 };
 const infoBtn = k => INFO[k] ? ` <button class="infobtn" type="button" data-act="info" data-k="${k}" aria-label="More about this" title="More about this">i</button>` : '';
@@ -1770,6 +1777,7 @@ const HOWTO = [
       { say: 'The bar at the bottom is the whole app: Home, Calendar, Game, Messages and More. Tap one to go there; tap it again to go back to its top.' },
       { say: 'The arrow at the top left goes back one screen. Hold a finger on it and it says where.' },
       { say: 'The club’s name at the top switches club, if you are in more than one. The team’s name switches team, if you see more than one.' },
+      { say: 'The pill at the top right, Sessions or Teams, switches between the club’s two sides: Teams is the season, games and practices; Sessions is 1-1s and small groups. The bar at the bottom changes with it.', who: ['sessions'] },
       { say: 'Your picture, or your initial, at the top right is your account: your name, the ways you sign in, and Sign out.' },
       { say: 'More holds what is not a tab: Settings, What’s new and this guide.', go: { act: 'tab', tab: 'more' }, label: 'Open More' }
     ] },
@@ -1791,7 +1799,7 @@ const HOWTO = [
     steps: [
       { say: 'Game at the bottom lists your games by day: being played first, then coming up, then results.', go: { act: 'tab', tab: 'game' }, label: 'Open Game' },
       { say: 'Open a game and tap Live: the score, what has happened and when. Before kick-off it says when, where, the kit and when to arrive.' },
-      { say: 'Notify me on Live tells this phone about each goal, kick-off, half time and full time, even with the app closed, once notifications are on.', who: ['signedin'] },
+      { say: 'Buzz me on Live tells this phone about each goal, kick-off, half time and full time, even with the app closed, once notifications are on.', who: ['signedin'] },
       { say: 'Once it is over, Recap tells the game back and Stats has the minutes and the numbers.' }
     ] },
   { id: 'calendar', title: 'Put the calendar on your phone', who: ['all'], lead: 'Every game and practice, in the calendar you already use.',
@@ -2229,13 +2237,16 @@ function readiness() {
   rows.push({ ok: nAdmins > 0, label: 'Someone administers this club', detail: nAdmins + ' admin' + (nAdmins === 1 ? '' : 's') });
   const nOwners = clubOwners().length;
   rows.push({ ok: nOwners > 0, label: 'Somebody owns it', detail: nOwners ? nOwners + ' owner' + (nOwners === 1 ? '' : 's') : 'no — any admin can take every other admin away' });
-  rows.push({ ok: nIndex > 0, label: 'The read index is not empty', detail: nIndex + ' account' + (nIndex === 1 ? '' : 's') + (nIndex ? '' : ' — every write would be refused') });
-  rows.push({ ok: !me || !!(a.index || {})[me.uid], label: 'Your own account is in it', detail: me ? (a.index || {})[me.uid] ? 'yes' : 'no — you would lose access' : 'not signed in' });
+  /* The rows in the club's words, not the rules' (UX-REVIEW-4.md, 25.6): a
+     new admin read "the read index", "the coach index" and a cross telling
+     her to set appOwners in a console she has never seen. */
+  rows.push({ ok: nIndex > 0, label: 'Somebody may open the club', detail: nIndex + ' account' + (nIndex === 1 ? '' : 's') + (nIndex ? '' : ' — nobody could, and every change would be refused') });
+  rows.push({ ok: !me || !!(a.index || {})[me.uid], label: 'Your own account may open it', detail: me ? (a.index || {})[me.uid] ? 'yes' : 'no — you would lose access' : 'not signed in' });
   const withRoles = teams().filter(t => Object.keys(teamAccess(t.id).coaches || {}).length || Object.keys(teamAccess(t.id).trackers || {}).length);
   const indexed = withRoles.filter(t => Object.keys((a.teamIndex || {})[t.id] || {}).length);
   rows.push({
     ok: indexed.length === withRoles.length,
-    label: 'Every team with a role has a team index',
+    label: 'Every team with staff has its staff listed',
     detail: withRoles.length ? indexed.length + ' of ' + withRoles.length : 'no team roles granted yet'
   });
   const coaches = new Set();
@@ -2243,18 +2254,18 @@ function readiness() {
   const inCoachIndex = [...coaches].filter(u => (a.coachIndex || {})[u]).length;
   rows.push({
     ok: inCoachIndex === coaches.size,
-    label: 'Every coach is in the coach index',
+    label: 'Every coach is listed for practice plans',
     detail: coaches.size ? inCoachIndex + ' of ' + coaches.size + (inCoachIndex === coaches.size ? '' : ' — practice plans need it') : 'no coaches yet'
   });
   const withParents = teams().filter(t => Object.keys(parentsWanted(t.id)).length);
   const listed = withParents.filter(t => Object.keys((a.teamParents || {})[t.id] || {}).length);
   rows.push({
     ok: listed.length === withParents.length,
-    label: 'Every team with parents has a parent list',
+    label: 'Every team with parents has its families listed',
     detail: withParents.length ? listed.length + ' of ' + withParents.length + (listed.length < withParents.length ? ' — notices are readable club-wide until then' : '') : 'no parents linked yet'
   });
   const shared = teams().filter(t => t.share);
-  rows.push({ ok: true, label: 'Shared teams have an owner list', detail: shared.length ? shared.length + ' published' : 'nothing shared' });
+  rows.push({ ok: true, label: 'Share pages have an owner', detail: shared.length ? shared.length + ' published' : 'nothing shared' });
   rows.push({
     ok: rulesCheck === 'ok',
     label: 'The published rules match this app',
@@ -2263,7 +2274,8 @@ function readiness() {
         : rulesCheck === 'app' ? 'newer than this app — reload it'
           : 'not checked yet — needs a signal'
   });
-  rows.push({ ok: Object.keys(appOwners).length > 0, label: 'An app owner exists', detail: Object.keys(appOwners).length ? 'yes' : 'set appOwners in the console' });
+  // the app's own owner is the developer's to set, never a club admin's to fix: her tally never counts it
+  if (isOwner() || !gated()) rows.push({ ok: Object.keys(appOwners).length > 0, label: 'An app owner exists', detail: Object.keys(appOwners).length ? 'yes' : 'set appOwners in the console' });
   return rows;
 }
 
@@ -3213,7 +3225,7 @@ const needsParent = (t, p) => p.active !== false && !Object.keys(p.guardians || 
 
 async function makeInvite() {
   if (!canAdmin()) { toast('Club admins only'); return; }
-  if (!fb || !rtdb || !me) { toast(me ? 'Needs a connection to the database' : 'Sign in first'); return; }
+  if (!fb || !rtdb || !me) { toast(me ? 'Needs a signal' : 'Sign in first'); return; }
   const f = ui.inv || {};
   const club = CLUB_ROLES.has(f.role);
   const t = club ? null : state.teams[f.team];
@@ -3309,7 +3321,7 @@ function sheetImportInvites() {
 async function inviteImported() {
   if (!importContacts) return;
   if (!canAdmin()) { toast('Club admins only'); return; }
-  if (!fb || !rtdb || !me) { toast(me ? 'Needs a connection to the database' : 'Sign in first'); return; }
+  if (!fb || !rtdb || !me) { toast(me ? 'Needs a signal' : 'Sign in first'); return; }
   const ic = importContacts;
   const todo = importInviteRows(ic).filter(x => x.st === 'todo');
   // all of them in one write, where the server is deployed (functions/staff.js)
@@ -3565,7 +3577,9 @@ function joinScreen() {
 async function makeJoinCode(tid, lim = {}) {
   const t = state.teams[tid];
   if (!t || !mayGrant(tid)) { toast('Club admins and that team’s coaches only'); return; }
-  if (!fb || !me) { toast(me ? 'Needs a connection to the database' : 'Sign in first'); return; }
+  if (!fb || !me) { toast(me ? 'Needs a signal' : 'Sign in first'); return; }
+  // a link is made at the database or not at all; with no signal the write would hang and nothing was said (UX-REVIEW-4.md, 25.9)
+  if (navigator.onLine === false) { toast('Needs a signal to make the link'); return; }
   const code = secretId().replace(/^i/, 'j'), at = nowMs(), old = (t.join || {}).code;
   // no limits is how a team link has always worked: until she makes a new one, for everyone it reaches
   const uses = Math.max(0, Math.min(JOIN_MAX, lim.uses || 0)), until = lim.days ? at + lim.days * 864e5 : 0;
@@ -3693,7 +3707,7 @@ async function approveFan(tid, u) {
   const c = (claimsSeen[tid] || {})[u];
   const p = c && isFanAsk(c) && (t.players || {})[c.player];
   if (!p) { toast(c ? 'That player is no longer on the squad' : 'That request has gone'); return; }
-  if (!fb || !me) { toast('Needs a connection to the database'); return; }
+  if (!fb || !me) { toast('Needs a signal'); return; }
   const at = nowMs();
   const ans = await staffAsk({ op: 'fan', tid, uid: u });
   if (ans) {
@@ -7793,6 +7807,14 @@ function roleWords(lim) {
   }
   return 'You can read, not change.';
 }
+/* The Sessions door, said once (UX-REVIEW-4.md, 24.1): the pill at the top
+   swaps the whole bar, and nothing on the way in said so. One line the
+   first time she stands in it, put away with Got it like the role card and
+   kept the same way, per account and club. */
+function doorCard() {
+  if (!hasDoor('teams') || roleCardSeen('door')) return '';
+  return `<div class="rolebar rolecard" data-role="door"><span>This is the club’s <b>Sessions</b> side: 1-1s and small groups, booked and counted. Games and practices are on the <b>Teams</b> side, the pill at the top; the bar at the bottom changes with it.</span> <span class="row" style="gap:14px"><button class="linkbtn dark" data-act="roleok" data-v="door">Got it</button></span></div>`;
+}
 function roleCard(lim) {
   if (!lim || roleCardSeen(lim)) return '';
   // Show me how opens the tutorial (build 192); the card stays until Got it, so the way to it is not lost with the tap
@@ -7814,7 +7836,10 @@ function render() {
   const clubless = noClub() && !inviting && !joining && !regx;
   const shut = inviting || joining || !!regx || !!purged || denied || unconfirmed || needsSignIn() || awaitingSignIn() || clubless;
   const t = team();
-  if (!t && teams().length) { ui.teamId = teams()[0].id; }
+  /* No team remembered (a phone on its first open): one she works on before
+     the first by name, which put a new coach on another age group's team
+     with a card saying it was not hers (UX-REVIEW-4.md, 23.2). */
+  if (!t && teams().length) { ui.teamId = (navTeams()[0] || teams()[0]).id; }
   const vis = myTeams();
   if (vis.length && !vis.some(x => x.id === ui.teamId)) ui.teamId = vis[0].id;
   const av = $('#avatar');
@@ -8390,7 +8415,7 @@ function sheetMore() {
     ${anyPlayers() && navKind() !== 'family' ? `<button class="opt" data-act="goview" data-v="mine"><b>My players</b>
       <span class="rowsub">${allKidNames().map(esc).join(', ')}</span></button>` : ''}
     ${inSess || !(canAdmin() && myTeams().length) ? '' : `<button class="opt" data-act="schedule"><b>All teams</b>
-      <span class="rowsub">Every team's calendar: this week, what is still to settle, and the Planner</span></button>`}
+      <span class="rowsub">Every team's calendar: this week, what is still to settle, and the Scheduler</span></button>`}
     ${inSess || !(canTrain() && (team() || myTeams().length)) ? '' : `<button class="opt" data-act="moredrills"><b>Drills</b>
       <span class="rowsub">The library, the club's and your own: look one up, change it, write a new one</span></button>`}
     ${inSess && canOffer() ? Object.entries(SESS_SET).map(([k, l]) => `<button class="opt" data-act="sesstab" data-k="${k}"><b>${l}</b>
@@ -8591,7 +8616,7 @@ function sheetClubSwitch() {
         <b>${esc(c.name)}</b><span class="rowsub">${c.code === here ? 'open now' : 'tap to open'}</span></button>
       ${c.code === here ? '<span class="muted">here</span>'
       : `<button class="btn quiet sm" data-act="forgetclub" data-code="${esc(c.code)}">Forget</button>`}</div>`).join('')}
-    <p class="muted">Forget takes this club off this device only.</p>
+    ${list.some(c => c.code !== here) ? '<p class="muted">Forget takes a club off this device only.</p>' : ''}
     <button class="opt" data-act="goview" data-v="club"><b>Club home</b>
       <span class="rowsub">Teams, stats and settings for ${esc((acc().org || {}).name || 'this club')}</span></button>
     ${canNewClub() ? `<button class="opt" data-act="newclub"><b>+ Start a new club</b>
@@ -8599,10 +8624,14 @@ function sheetClubSwitch() {
     <p class="muted">To join someone else's club, ask its admin for an invite link.</p>`);
 }
 
+/* A club with no teams yet. Until build 193 this named the club's code and
+   told her to check its spelling, from the days a coach typed one into a
+   box: the first thing anyone who tapped Start a new club read was a warning
+   about a code she never saw (UX-REVIEW-4.md, 23.1). The code is an id in
+   paths now, nobody's to type, so the card says what to do next instead. */
 function needTeam() {
-  const c = wsCode();
-  return `<div class="empty"><strong>No teams here</strong>${c ? `Nothing is stored under <code>${esc(c)}</code>. If you expected teams, check the code character by character — it is case sensitive and order matters.` : 'Add a team, then its players. Everything else hangs off that.'}
-  <div style="margin-top:14px"><button class="btn" data-act="newteam">Add a team</button></div></div>`;
+  return `<div class="empty"><strong>No teams yet</strong>${canAdmin() ? 'Add a team, then its players. Everything else hangs off that.' : 'The club admin adds the teams. Ask for yours, and it will be here.'}
+  ${canAdmin() ? '<div style="margin-top:14px"><button class="btn" data-act="newteam">Add a team</button></div>' : ''}</div>`;
 }
 
 
@@ -8728,7 +8757,9 @@ function viewGames() {
   const g = gamesPlan();
   if (!g.all.length) {
     const add = ui.teamId && g.ts.some(t => t.id === ui.teamId) ? addGameBtn('btn wide') : '';
-    return `<div class="stack"><div class="empty"><strong>No games yet</strong>${add ? 'Add one here, or a season of them from the + on the Calendar.' : 'They show up here once the coach adds them.'}</div>${add}</div>`;
+    // with no team at all, the admin about to be the coach was told to wait for the coach (UX-REVIEW-4.md, 23.5)
+    const say = add ? 'Add one here, or a season of them from the + on the Calendar.' : !teams().length && canAdmin() ? 'Add a team first, then its games.' : 'They show up here once the coach adds them.';
+    return `<div class="stack"><div class="empty"><strong>No games yet</strong>${say}</div>${add}</div>`;
   }
   return `<div class="stack">
     ${g.live.length ? `<div class="card"><h2>Being played</h2><div class="plist gfirst">${g.live.map(m => gamesRow(m, g.own.has(m.teamId), g.mixed)).join('')}</div></div>` : ''}
@@ -8926,7 +8957,7 @@ function liveRow(t, m, p, isOn, now, behind, withPid) {
           ${pd > 0 ? `<span class="diff ${behind.has(p.id) ? 'owed' : diffClass(m, pl, pd, el) === 'over' ? 'over' : 'even'}">${diff < 0 ? -diff + ' short' : diff > 0 ? diff + ' over' : 'on plan'}</span>` : ''}</span>
       </button>
       ${isOn && !plain ? `<button class="lrspot" type="button" data-act="switchpos" data-pid="${p.id}" aria-label="${spot ? `${esc(spot)}: move` : 'Set her spot'}">
-        <span>${esc(spot || 'Spot')}</span></button>` : ''}
+        <span>${esc(spot || 'No spot')}</span></button>` : ''}
     </div>`;
 }
 
@@ -10273,7 +10304,7 @@ function viewSubs() {
     ${planBar}
     ${warn}
     <div class="card"><div class="spread" style="margin-bottom:8px">
-      <h2>On the pitch</h2>
+      <h2>On the pitch${infoBtn('shortover')}</h2>
       <span class="row"><button class="btn quiet sm" data-act="togglesort">${byNumber ? 'By number' : 'By minutes'}</button>
       ${planning ? '' : '<button class="btn quiet sm" data-act="startplan">Several at once</button>'}</span></div>
       <p class="muted" style="margin:0 0 10px">${on.length} of ${m.onFieldCount || 11} on${byNumber ? ', in shirt-number order' : ', longest spell first'}</p>
@@ -10563,6 +10594,9 @@ function subsCard(t, m, now) {
           <button class="btn quiet sm" data-act="opengview" data-v="plan">Open the plan</button></div>
           <p class="muted" style="margin:6px 0 0">Lock in your plan and this card counts down to each change, says when subs are due, and makes them with one tap — here, and on your assistant coach\u2019s Lineup.</p>
           ${canEditTeam(m.teamId) ? `<button class="btn wide" data-act="planlock" style="margin-top:10px">Lock in the plan</button>` : ''}</div>`;
+    /* Once the game is on, nobody is going to plan it: the paragraph took the
+       top third of the screen she was subbing from (UX-REVIEW-4.md, 25.7). */
+    if (!notKickedOff(m)) return `<div class="card subscard" id="subsdue" data-k="none"><p class="muted" style="margin:0">No planned subs for this game. Lock a plan in on Lineup next time, and this card counts down to each change.</p></div>`;
     return `<div class="card subscard" id="subsdue" data-k="none"><div class="spread"><h2>Planned subs</h2>
           <button class="btn quiet sm" data-act="opengview" data-v="plan">Open Lineup</button></div>
           <p class="muted" style="margin:6px 0 0">Plan the game on Lineup and lock it in: this card then counts down to each change and says when subs are due.</p></div>`;
@@ -10715,7 +10749,7 @@ function viewPlan() {
       <p class="muted" style="margin-top:0">Who starts where, then who is where after each change.${infoBtn('snapshots')}</p>
       <button class="btn wide" data-act="snapstart">Plan kick-off</button>
       ${copyPlanBtn(t, m)}
-      <p class="muted" style="margin:12px 0 0">Or let the app draft one from your target minutes, or paste back an answer from <b>Ask an AI</b>, and change what you like.</p></div>`;
+      <p class="muted" style="margin:12px 0 0">Or <b>Draft a plan</b>, below, from your target minutes, or paste back an answer from <b>Ask an AI</b>, and change what you like.</p></div>`;
   } else {
     const cur = blocks.find(b => b.start === ui.snapAt) || blocks[0];
     const i = blocks.indexOf(cur), prev = i ? blocks[i - 1] : null;
@@ -10830,9 +10864,9 @@ function viewPlan() {
       <div class="stack">
         <div class="card"><div class="spread" style="margin-bottom:10px">
           <h2>Minutes</h2><button class="btn quiet sm" data-act="planall">Set targets</button></div>
-          <p class="muted" style="margin-top:0">${m.periodCount || 2} × ${m.periodMinutes || 40} min · ${m.onFieldCount || 11}v${m.onFieldCount || 11}. ${blocks.length ? 'What each player gets if you follow the snapshots, against her target.' : 'Targets are optional — they are what <b>Build one for me</b> aims for.'}</p>
+          <p class="muted" style="margin-top:0">${m.periodCount || 2} × ${m.periodMinutes || 40} min · ${m.onFieldCount || 11}v${m.onFieldCount || 11}. ${blocks.length ? 'What each player gets if you follow the snapshots, against her target.' : 'Targets are optional — they are what <b>Draft a plan</b> aims for.'}</p>
           ${minutesRows}</div>
-        <div class="card"><h2 style="margin-bottom:6px">Build one for me</h2>
+        <div class="card"><h2 style="margin-bottom:6px">A draft from your targets</h2>
           <p class="muted" style="margin-top:0">${blocks.length ? 'Only for an empty plan, so it can never write over yours. <b>Clear plan</b> first if you really want a fresh draft.' : `Drafts a snapshot every ${Number(m.blockMinutes) || 10} minutes or so from the targets, ratings and pairings. Every one of them can be changed afterwards.`}</p>
           ${blocks.length ? '' : '<button class="btn quiet wide" data-act="makeplan">Draft a plan</button>'}</div>
         ${comingCard(t, m)}
@@ -11556,10 +11590,10 @@ function calSyncCard(t, all) {
   }).join('');
   return `<div class="card"><h2 style="margin-bottom:8px">In your own calendar</h2>
     ${mine}
-    ${rows ? `<p class="muted" style="margin-top:0">${mine ? `Or ${all ? 'each team' : 'this team'} alone: s` : 'S'}ubscribe once and your calendar follows every change — a moved kick-off, a called-off practice, a new tournament. Apple and Outlook check about every hour; Google keeps its own pace, often several hours.</p>` : ''}
+    ${rows ? `<p class="muted" style="margin-top:0">${mine ? `Or ${all ? 'each team' : 'this team'} alone: s` : 'S'}ubscribe once and your calendar follows every change by itself. Nobody is named in it, and it is the team's, not one person's: replace it when someone leaves the team.${infoBtn('calsync')}</p>` : ''}
     ${rows}${famNote}
     ${isSandbox() ? '<p class="muted">Test club: nothing is published, so a subscription here stays empty.</p>' : ''}
-    ${rows ? `<p class="muted">The address shows practices as well as games — never names. It is the team's, not one person's: replace it when someone leaves the team, or it keeps reaching them. Outlook: <i>Add calendar \u2192 From internet</i> and paste the address.</p>` : ''}
+    ${/* the hours each calendar app takes, whose the address is and the Outlook steps are behind the ⓘ (UX-REVIEW-4.md, 26.1) */ ''}
     <button class="btn quiet wide" data-act="calicsall"${all ? '' : ` data-tid="${esc(t.id)}"`}>Or add a one-off copy</button></div>`;
 }
 
@@ -12467,9 +12501,9 @@ function sheetCalEvent() {
       <button class="chip" type="button" data-act="newmatch" data-from="cal">A game →</button>
       <button class="chip" type="button" data-act="calgames" data-tid="${esc(f.tid)}">A run of games →</button></div>` : ''}
     ${f.kind === 'practice' ? `<p class="lbl">What kind</p>
-      <div class="chips" style="margin-bottom:6px">${PTYPE_ORDER.map(k => chip('calptype', k, (f.ptype || 'regular') === k, kindOf(k).label)).join('')}</div>
+      <div class="chips" style="margin-bottom:6px">${PTYPE_ORDER.map(k => chip('calptype', k, (f.ptype || 'regular') === k, k === 'regular' ? 'Regular' : kindOf(k).label)).join('')}</div>
       ${kindOf(f.ptype).who === 'keepers' ? '<p class="muted" style="margin-top:0">Only the keepers are asked and counted.</p>' : ''}` : ''}
-    <label class="field"><span>What</span><input type="text" id="evTitle" value="${esc(f.title)}" placeholder="${f.kind === 'practice' ? esc(kindOf(f.ptype).label) : 'Team photo, tournament, end-of-season party'}"></label>
+    <label class="field"><span>What</span><input type="text" id="evTitle" value="${esc(f.title)}" placeholder="${f.kind === 'practice' ? (f.ptype && f.ptype !== 'regular' ? esc(kindOf(f.ptype).label) : 'Optional') : 'Team photo, tournament, end-of-season party'}"></label>
     <label class="field"><span>${isNew && f.repeat ? 'First one' : 'Date'}</span><input type="date" id="evDate" value="${esc(f.date)}"></label>
     <div class="grid2">
       <label class="field"><span>Starts</span><input type="time" id="evStart" value="${esc(f.start)}"></label>
@@ -12899,7 +12933,7 @@ function viewMinutes() {
   const ms = teamMatches(t.id);
   const rows = minutesRows(t, ms);
   const list = rows.length ? `<div class="card"><div class="spread" style="margin-bottom:10px">
-      <h2>Minutes</h2><span class="muted">furthest behind first</span></div>
+      <h2>Minutes${infoBtn('shortover')}</h2><span class="muted">furthest behind first</span></div>
     <div class="plist">${rows.map(r => {
     const pct = r.pd > 0 ? clamp(r.pl / r.pd * 100, 0, 100) : 0;
     // short is coloured; over is not bad, so the bar is just full (UX-REVIEW-2.md, 7.2)
@@ -15259,10 +15293,16 @@ function planView(L, t, pr) {
     </div>
     ${warn.length ? `<div class="card planwarn">${warn.map(w => `<p>${esc(w)}</p>`).join('')}</div>` : ''}
     ${rows ? `<div class="stack">${rows}</div>` : `<div class="empty"><strong>No drills yet</strong>Add them from the library, or let the app suggest a session for this team's age${s ? ' and what it needs' : ''}.</div>`}
-    <div class="row" style="gap:8px"><button class="btn" style="flex:1" data-act="pracpick" data-id="${id}">Add a drill</button>
-      <button class="btn quiet" style="flex:1" data-act="pracsuggest" data-id="${id}">${pr.blocks.length ? 'Suggest another' : 'Suggest a session'}</button></div>
-    <button class="btn quiet wide" data-act="tplpick" data-id="${id}">${pr.blocks.length ? 'Swap in a template' : 'Plan from a template'}</button>
-    <button class="btn quiet wide" data-act="pracai" data-id="${id}">Ask an AI for a session</button>
+    ${pr.blocks.length ? `<div class="row" style="gap:8px"><button class="btn" style="flex:1" data-act="pracpick" data-id="${id}">Add a drill</button>
+      <button class="btn quiet" style="flex:1" data-act="pracsuggest" data-id="${id}">Suggest another</button></div>
+    <button class="btn quiet wide" data-act="tplpick" data-id="${id}">Swap in a template</button>
+    <button class="btn quiet wide" data-act="pracai" data-id="${id}">Ask an AI for a session</button>`
+    /* an empty plan leads with one way in; four at once was a wall for a coach planning her first practice (UX-REVIEW-4.md, 26.6) */
+    : `<button class="btn wide" data-act="pracsuggest" data-id="${id}">Suggest a session for this team</button>
+    <p class="lbl" style="margin-top:12px">Other ways</p>
+    <div class="row" style="gap:8px"><button class="btn quiet" style="flex:1" data-act="pracpick" data-id="${id}">Add a drill</button>
+      <button class="btn quiet" style="flex:1" data-act="tplpick" data-id="${id}">Plan from a template</button></div>
+    <button class="btn quiet wide" data-act="pracai" data-id="${id}">Ask an AI for a session</button>`}
     ${kit ? `<div class="card"><h4 style="margin:0 0 4px">Bring</h4><p style="margin:0">${esc(kit)}</p></div>` : ''}
     ${review}
     <div class="row" style="gap:8px"><button class="btn quiet" style="flex:1" data-act="pracagain" data-id="${id}">Use this plan for…</button>
@@ -16413,7 +16453,7 @@ function viewSessHome() {
   if (!canSessions()) return viewSessions();
   const staff = canOffer(), kids = myChildren();
   const body = (staff ? sessStaffHome() : '') + (kids.length ? sessFamilyHome(staff) : '');
-  return `<div class="stack">${sessNote()}${body}</div>`;
+  return `<div class="stack">${doorCard()}${sessNote()}${body}</div>`;
 }
 /* A session as the next-up card: a tap opens its sheet, where everything
    about it is; Directions and Add to your calendar beside it, as a practice's
@@ -19099,6 +19139,14 @@ function viewSetup() {
     <p class="muted" style="margin-top:0">This phone has ${esc(importSummary(lo.plan.counts).replace(/^adds /, ''))} from before it joined this club, kept on this phone and nowhere else.</p>
     ${adm ? `<button class="btn quiet wide" data-act="adoptlocal">Add them to the club</button>`
       : '<p class="muted" style="margin-bottom:0">A club admin can add them to the club, signed in on this phone.</p>'}</div>` : '';
+  /* What the club still needs, first, for an admin: the one tally marked
+     "to fix" sat at the foot of a long screen under Advanced (UX-REVIEW-4.md,
+     26.3). The rules row waits for a signal to be checked, so it is not
+     counted here until it has been. */
+  const fixes = adm && code && cfgOk ? readiness().filter(x => !x.ok && !/not checked yet/.test(x.detail)).length : 0;
+  const ready = fixes ? `<div class="card"><h2 style="margin-bottom:8px">${fixes} thing${fixes === 1 ? '' : 's'} still to set up</h2>
+    <p class="muted" style="margin-top:0">Until ${fixes === 1 ? 'it is' : 'they are'} done, some changes will not save. Check readiness says which, and what to do.</p>
+    <button class="btn quiet wide" data-act="readysheet">Check readiness</button></div>` : '';
 
   /* Who she is, as a card of its own at the top: her picture or initials,
      her name, and her role in this club. A tap opens the account sheet. */
@@ -19186,7 +19234,7 @@ function viewSetup() {
   const about = `<section class="setgroup"><h2 class="sechead">About</h2><button class="card go setswitch quiet" type="button" data-act="aboutsheet"><span class="seticon">${SET_ICON.about}</span>
     <span class="settxt"><b>${APP_NAME} · v${BUILD}</b><span class="setsub">${stale() ? 'An older copy of this page: open it to reload' : 'Version, connection, and your account id for support'}</span></span></button></section>`;
 
-  return `<div class="stack setstack">${pend}${old}${you}${notify}${team_}${club}${adv}${about}</div>`;
+  return `<div class="stack setstack">${pend}${old}${ready}${you}${notify}${team_}${club}${adv}${about}</div>`;
 }
 /* Settings → About, and the badge when nothing is waiting: the version, what
    the badge says and why, and the account id. The connection reads `online`,
@@ -23548,7 +23596,7 @@ const mayFanAsk = (tid, p) => !!p && (mayGrant(tid) || isMine(p));
 async function makeFanLink(tid, pid, lim = {}) {
   const t = state.teams[tid], p = t && (t.players || {})[pid];
   if (!mayFanAsk(tid, p)) { toast('Her family, her coach or an admin asks for a fan'); return false; }
-  if (!fb || !rtdb || !me) { toast(me ? 'Needs a connection to the database' : 'Sign in first'); return false; }
+  if (!fb || !rtdb || !me) { toast(me ? 'Needs a signal' : 'Sign in first'); return false; }
   // both grandparents from one link, if she says so
   const uses = Math.max(1, Math.min(LINK_MAX, lim.uses || 1));
   const id = uses > 1 ? randId('m', 18) : secretId(), at = nowMs();
@@ -24694,7 +24742,7 @@ function sheetTeam(t) {
     </div>` : ''}
     <label class="field"><span>Name</span><input type="text" id="tName" value="${esc(t && t.name ? t.name : '')}" placeholder="Lakeside Thunder G14"></label>
     <label class="field"><span>Birth year</span><input type="number" inputmode="numeric" id="tBirth" value="${esc(t && t.birthYear ? String(t.birthYear) : '')}" placeholder="${seasonEndYear() - 11}"></label>
-    <p class="muted" style="margin-top:-6px">The year most of the squad were born. It sets the age group, ${t && teamUAge(t) != null ? `${uLabel(teamUAge(t))} this season, ` : ''}which moves up by itself every August, and starts the drill library at the right age.</p>
+    <p class="muted" style="margin-top:-6px">The year most of the players were born. It sets the age group, ${t && teamUAge(t) != null ? `${uLabel(teamUAge(t))} this season, ` : ''}which moves up by itself every August, and starts the drill library at the right age.</p>
     <button class="btn wide" data-act="saveteam" data-id="${t ? t.id : ''}">${t ? 'Save changes' : 'Create team'}</button>
     ${t ? `<div style="margin-top:8px"><button class="btn danger wide" data-act="delteam" data-id="${t.id}">Delete this team and its games</button></div>` : ''}`);
 }
@@ -26621,7 +26669,7 @@ function onAct(e) {
       delete all[d.pid]; keepSelfInvites(all);
     }
     if (a === 'selfinvdrop') { toast('Withdrawn — the link no longer works'); sheetPlayer(p); return; }
-    if (!fb || !rtdb || !me) { toast(me ? 'Needs a connection to the database' : 'Sign in first'); return; }
+    if (!fb || !rtdb || !me) { toast(me ? 'Needs a signal' : 'Sign in first'); return; }
     writeInvite(t, 'player', p, '', readLimits('selfL', { noUses: true })).then(({ id, doc }) => {
       all[d.pid] = { id, at: doc.at, expiresAt: doc.expiresAt }; keepSelfInvites(all);
       logAccess('made a sign-in link for player', null, { team: t.id, teamName: t.name || null, player: p.name });
@@ -27357,15 +27405,20 @@ function hashToUi() {
    for is there, the next thing with Going / Not going on it. So the app
    opened with no address of its own (the icon on her home screen, a typed
    address) lands there, whatever was open last, while a link or a reload
-   keeps the screen it names. Staff keep what was open last, as before.
+   keeps the screen it names. Staff keep what was open last, as before, and
+   a staff phone with nothing kept (its first open: a coach who has just
+   accepted an invite, whose accept reloads the page) lands on Home too,
+   once the club is known, rather than on the Calendar the default screen
+   used to be (UX-REVIEW-4.md, 23.2).
    Whether she is family is known from the phone's copy at once, or for a new
    phone once the club has been read (connected()); a tap before then is her
    choosing somewhere, and the landing is called off (onAct). */
 let landHome = false;
 function landNow() {
   if (!landHome) return;
+  const known = wsRead || !fbConfig().apiKey || teams().length > 0;
   // the door she last stood in, or where she starts (DOORS.md): the screen being left behind does not decide it
-  if (navKind() === 'family') { landHome = false; ui.door = ui.door && hasDoor(ui.door) ? ui.door : defaultDoor(); ui.view = ui.door === 'sessions' ? 'shome' : homeView(); ui.thread = null; return; }
+  if (navKind() === 'family' || (!uiRemembered && known)) { landHome = false; ui.door = ui.door && hasDoor(ui.door) ? ui.door : defaultDoor(); ui.view = ui.door === 'sessions' ? 'shome' : homeView(); ui.thread = null; return; }
   // nothing more is coming to change her mind: no club to read, or it has been read
   if (wsRead || !fbConfig().apiKey) landHome = false;
 }

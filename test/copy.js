@@ -200,6 +200,12 @@ console.log('\n--- the labels, as GLOSSARY.md names them ---');
   A.click({ act: 'readysheet' });
   check('Check readiness explains itself without a lookup table', /every change saves/.test(sheet()) && !/lookup table/.test(sheet()), true);
   check('— and is the one place the rules are named', /The published rules match this app/.test(sheet()), true);
+  check('— in the club\'s words, never the rules\' (build 193: no read index, team index or coach index)', /read index|team index|coach index|parent list/.test(text(sheet())), false);
+  A.closeSheet();
+  // the New team sheet, the one sheet that slipped: "the year most of the squad were born" (UX-REVIEW-4.md, 23.6)
+  as('boss', 'club'); A.click({ act: 'newteam' });
+  check('the New team sheet carries no banned word', /New team/.test(sheet()) ? offending(sheet()).join() : 'no sheet', '');
+  A.closeSheet();
 }
 
 /* ---------------- 2.4: the role card, once ---------------- */
@@ -288,7 +294,7 @@ console.log('\n--- buttons that are verbs ---');
   check('Subs sorts By minutes or By number', /data-act="togglesort">By (?:minutes|number)</.test(h), true);
   check('— stages Several at once, not a Batch', /data-act="startplan">Several at once</.test(h) && !/>Batch</.test(h), true);
   check('— says short, over or on plan, never owed', /class="diff (?:owed|over)">\d+ (?:short|over)<|>on plan</.test(h) && !/\d+ owed/.test(h), true);
-  check('— a spot with nothing in it reads Spot, and one word (build 146: no set/move stacked under it)', /aria-label="Set her spot">\s*<span>Spot<\/span><\/button>/.test(h) && !/lrspot-hint/.test(h), true);
+  check('— a spot with nothing in it reads No spot, and nothing more (build 146: no set/move stacked under it; build 193: a pill saying Spot read as a command)', /aria-label="Set her spot">\s*<span>No spot<\/span><\/button>/.test(h) && !/lrspot-hint/.test(h), true);
 }
 
 H.summary('copy and vocabulary: every screen held to GLOSSARY.md');
