@@ -634,7 +634,7 @@ console.log('\n--- Track, full screen (build 173) ---');
   check('— the clock ticking in place, with the controls', /id="clock">5:00</.test(A.rendered()) && /data-halfclock="1"/.test(A.rendered()) && /class="fsclockbtns"><button class="btn stop" data-act="pause">Pause<\/button><button class="btn stop" data-act="endhalf">End 1st half<\/button>\s*<button class="btn stop" data-act="endgame">End game</.test(A.rendered()), true);
   check('— a Goal each side', goalBtns(), 2);
   check('— shots on and off, every set piece switched on, and turnovers: a row each, both sides', btns(),
-    'shot1:us shot1:them shot0:us shot0:them evcorner:us evcorner:them evfoul:us evfoul:them evthrow:us evthrow:them evgoalkick:us evgoalkick:them evkeeper:us evkeeper:them poss:us poss:them');
+    'shot1:us shot1:them shot0:us shot0:them evcorner:us evcorner:them evfoul:us evfoul:them evthrow:us evthrow:them evgoalkick:us evgoalkick:them evkeeper:us evkeeper:them evsub:us evsub:them poss:us poss:them');
   check('— each button names its side, since two columns have no header to read across', /data-side="us" data-on="1"><b>0<\/b><span>G14 Flight<\/span>/.test(A.rendered()) && /data-side="them" data-on="1"><b>0<\/b><span>Northgate<\/span>/.test(A.rendered()), true);
   check('— the way out, and who is logging', /data-act="trackexit">Exit full screen</.test(A.rendered()) && /data-act="setwho"/.test(A.rendered()), true);
   check('— and nothing logged yet says so at the foot', /class="fslast"><span class="gb-label">Last<\/span><span class="muted">Nothing logged yet\./.test(A.rendered()), true);
@@ -686,7 +686,7 @@ console.log('\n--- Track, full screen (build 173) ---');
   // a tracker: the same rows, and the clock controls too (build 175: Track runs the clock)
   as('trk', 'game'); A.ui.matchId = 'g2'; A.ui.gameView = 'track'; live(); A.render();
   A.click({ act: 'trackfull' });
-  check('a tracker gets it too: the same rows', full() + ' ' + btns().split(' ').length, 'track 14');
+  check('a tracker gets it too: the same rows', full() + ' ' + btns().split(' ').length, 'track 16');
   check('— and the clock to run, since build 175', /data-act="pause"/.test(A.rendered()) && /data-act="endgame"/.test(A.rendered()) && !/runs the clock/.test(A.rendered()), true);
   check('— no Choose', /data-act="trackcfg"/.test(A.rendered()), false);
   A.click({ act: 'shot', side: 'us', on: '1' }); A.click({ act: 'undolast' });

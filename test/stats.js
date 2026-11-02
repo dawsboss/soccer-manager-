@@ -302,6 +302,68 @@ console.log('--- the share page never takes the app\'s address from what it is s
   check('the line saying why players are numbers comes after the game, at the foot', live.indexOf('${statsBlock(g, name)}') > 0 && live.indexOf('${signedOutNote()}') > live.indexOf('${statsBlock(g, name)}'), true);
 }
 
+console.log('--- a sub seen from the sideline is a mark on the clock, and nothing about who (build 193) ---');
+{
+  /* The owner, 2026-10-31: the tracker notes a substitution when she sees one
+     go on, either team's, as a time on the clock alone. It is one more kind
+     in the tally vocabulary, so it rides the same path as a corner: one
+     append-only event, Undo last, the editor, the log, the charts and the
+     share page. What makes it different is pinned here: no player is ever
+     offered or named, it moves possession to nobody, and it files under Subs
+     in the log and the feed, not under set pieces. */
+  const m = setup({ events: { c1: { t: 100, side: 'us', kind: 'corner' } } });
+  const t = A.state.teams.t1;
+  check('Subs is one of the kinds counted', A.EVENTS.some(e => e.k === 'sub' && e.label === 'Subs'), true);
+  check('on by default, like every other kind', A.tracked(t).some(e => e.k === 'sub'), true);
+  t.track = { possession: true, sub: false };
+  check('and switched off the same way', A.tracked(t).some(e => e.k === 'sub'), false);
+  t.track = { possession: true };
+
+  // the tap: one event each, at the clock, with no player on it
+  const writes = {};
+  A.fb = { db: {}, base: 'workspaces/CLUB', ref: (db, p) => p, set: (p, v) => { writes[p] = v; return Promise.resolve(); }, remove: p => Promise.resolve() };
+  A.click({ act: 'ev', side: 'them', kind: 'sub' });
+  H.clock.advance(2 * MIN);
+  A.click({ act: 'ev', side: 'us', kind: 'sub' });
+  A.timers.run();
+  const marks = Object.entries(writes).filter(([p]) => /matches\/g1\/events\//.test(p)).map(([, v]) => v).sort((a, b) => a.t - b.t);
+  check('two marks, each its own event', marks.length, 2);
+  deepEq('at the clock, by side, naming nobody', marks.map(x => [x.t, x.side, x.kind, 'pid' in x]), [[30 * 60, 'them', 'sub', false], [32 * 60, 'us', 'sub', false]]);
+  A.fb = null;
+
+  // the taps landed in local state too (commit() keeps the phone's copy): the two marks, in order
+  const ids = Object.keys(m.events).filter(k => m.events[k].kind === 'sub').sort((a, b) => m.events[a].t - m.events[b].t);
+  check('both kept on the phone', ids.length, 2);
+  check('counted per side', [A.evCount(m, 'sub', 'us'), A.evCount(m, 'sub', 'them')].join(' '), '1 1');
+  deepEq('possession hears nothing from a sub: the corner is the one marker from the events', A.possMarkers(m).filter(x => x.coll === 'events').map(x => x.src), ['corner']);
+  const before = A.possession({ ...m, events: { c1: m.events.c1 } }, undefined, 5);
+  deepEq('and the shares do not move', A.possession(m, undefined, 5), before);
+
+  const rows = A.timeline(t, m).filter(r => r.act === 'fixev' && /Sub/.test(r.h));
+  check('in the match log as Sub, under Subs in the filter, with the side', rows.length === 2 && rows.every(r => r.g === 'sub') && rows.some(r => /Riverside/.test(r.h)), true);
+  const feed = A.feedItems(t, m).filter(x => ids.some(id => x.key === 'ev:' + id));
+  check('in the play-by-play as a sub, by side, no detail', feed.length === 2 && feed.every(x => x.kind === 'sub' && x.detail === '') && feed.some(x => x.title === 'Sub — Riverside'), true);
+  const names = Object.values(t.players).map(p => p.name);
+  const noName = html => !names.some(n => html.includes(n)) && !names.some(n => html.includes(n.split(' ')[0]));
+  A.ui.view = 'game'; A.ui.gameView = 'track'; A.render();
+  let html = A.rendered();
+  check('Track has a Subs row with a button each side', /data-act="ev" data-kind="sub" data-side="us"/.test(html) && /data-act="ev" data-kind="sub" data-side="them"/.test(html), true);
+  check('and the card says what it holds', /Set pieces, fouls and subs/.test(html), true);
+  check('the heading without subs is as it was', A.countsHeading(A.EVENTS.filter(e => e.k !== 'sub')) + ' | ' + A.countsHeading(A.EVENTS.filter(e => e.k === 'sub')), 'Set pieces and fouls | Subs');
+  A.click({ act: 'fixev', id: ids[1] });
+  html = A.rendered('#sheet');
+  check('the editor of our own sub offers no player, and says so', /nothing about who/.test(html) && !/data-grp="who"/.test(html) && noName(html), true);
+  check('the time is still hers to fix', /id="evT"/.test(html) && /data-act="saveev"/.test(html), true);
+  A.dom.sheetHtml = '';
+  A.click({ act: 'fixev', id: 'c1' });
+  check('a corner still offers who took it', /data-grp="who"/.test(A.rendered('#sheet')), true);
+  A.dom.sheetHtml = '';
+  const doc = A.publicGame(t, m);
+  deepEq('the share page counts them like any other kind', doc.events.sub, { us: 1, them: 1 });
+  check('and still carries no name', noName(JSON.stringify(doc)), true);
+  A.ui.view = 'team';
+}
+
 console.log('--- the phone never writes public/: the server does (SECURITY.md, SEC-10) ---');
 {
   /* Every tap of a game, and every share-link action, with a connection that

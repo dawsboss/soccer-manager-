@@ -26,7 +26,7 @@
 const CALLED = { cancelled: 'Cancelled', postponed: 'Postponed' };
 const HOME_AWAY = { home: 'Home', away: 'Away', neutral: 'Neutral ground' };
 const CAL_KIND = { practice: 'Practice', event: 'Event' };
-const EVENT_KINDS = ['corner', 'foul', 'throw', 'goalkick', 'keeper'];
+const EVENT_KINDS = ['corner', 'foul', 'throw', 'goalkick', 'keeper', 'sub'];
 const pad2 = n => String(n).padStart(2, '0');
 const hm = t => { const x = /^(\d{1,2}):(\d{2})/.exec(String(t || '')); return x ? pad2(x[1]) + ':' + x[2] : ''; };
 const okDay = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
@@ -119,6 +119,7 @@ function possMarkers(m) {
   const out = [];
   for (const [id, x] of Object.entries(obj(m.poss))) out.push({ t: x.t, to: x.to, src: 'tap', id, coll: 'poss' });
   for (const [id, x] of Object.entries(obj(m.events))) {
+    if (x.kind === 'sub') continue;   // a sub says nothing about who has the ball
     const other = x.side === 'us' ? 'them' : 'us';
     out.push({ t: x.t, to: x.kind === 'foul' ? other : x.side, src: x.kind, id, coll: 'events' });
   }

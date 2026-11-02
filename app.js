@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '192';
+const BUILD = '193';
 const BUILT = '2026-10-25';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -6773,8 +6773,18 @@ const EVENTS = [
   { k: 'foul', label: 'Fouls', who: 'given away by', attr: 'Who committed it' },
   { k: 'throw', label: 'Throw-ins', who: 'taken by', attr: 'Who took it' },
   { k: 'goalkick', label: 'Goal kicks', who: 'taken by', attr: 'Who took it' },
-  { k: 'keeper', label: 'Keeper claims', who: 'grabbed by', attr: 'Which keeper' }
+  { k: 'keeper', label: 'Keeper claims', who: 'grabbed by', attr: 'Which keeper' },
+  /* A substitution seen from the sideline (the owner, 2026-10-31): a mark on
+     the clock that a change was made, either side, and nothing about who.
+     The tracker's, so the minute a team changed is known even where nobody
+     runs the subs on Subs, and for the other team always. `noWho` keeps the
+     editor from offering a player: naming who went on or off is the coach's
+     stint record, not this. */
+  { k: 'sub', label: 'Subs', who: 'made by', attr: '', noWho: true }
 ];
+/* What the card of counted things is called, by what is in it: a sub is not a
+   set piece, and the heading should not say it is. */
+const countsHeading = rows => { const set = rows.some(e => e.k !== 'sub'), subs = rows.some(e => e.k === 'sub'); return set && subs ? 'Set pieces, fouls and subs' : subs ? 'Subs' : 'Set pieces and fouls'; };
 const evOf = k => EVENTS.find(e => e.k === k) || { label: k, who: '', attr: 'Who' };
 const evLabel = k => evOf(k).label;
 const tracked = t => EVENTS.filter(e => ((t.track || {})[e.k] !== false));
@@ -6824,6 +6834,8 @@ function possMarkers(m) {
   const out = [];
   for (const [id, x] of Object.entries(m.poss || {})) out.push({ t: x.t, to: x.to, src: 'tap', id, coll: 'poss' });
   for (const [id, x] of Object.entries(m.events || {})) {
+    // a sub says nothing about who has the ball
+    if (x.kind === 'sub') continue;
     const other = x.side === 'us' ? 'them' : 'us';
     out.push({ t: x.t, to: x.kind === 'foul' ? other : x.side, src: x.kind, id, coll: 'events' });
   }
@@ -9011,7 +9023,8 @@ function timeline(t, m) {
   for (const [id, x] of Object.entries(m.shots || {}))
     rows.push({ t: x.t, g: 'shot', act: 'fixshot', id, h: `Shot ${x.onTarget ? 'on target' : 'off target'} ${side(x.side)}${x.pid ? ' — ' + nm(x.pid) : ''}${who(x)}` });
   for (const [id, x] of Object.entries(m.events || {}))
-    rows.push({ t: x.t, g: 'set', act: 'fixev', id, h: `${esc(evLabel(x.kind).replace(/s$/, ''))} ${side(x.side)}${x.pid ? ' — ' + nm(x.pid) : ''}${who(x)}` });
+    // a sub mark files under Subs in the log's filter, with the subs the coach made
+    rows.push({ t: x.t, g: x.kind === 'sub' ? 'sub' : 'set', act: 'fixev', id, h: `${esc(evLabel(x.kind).replace(/s$/, ''))} ${side(x.side)}${x.pid ? ' — ' + nm(x.pid) : ''}${who(x)}` });
   for (const [id, x] of Object.entries(m.poss || {}))
     rows.push({ t: x.t, g: 'poss', act: 'fixposs', id, h: `Turnover — ${side(x.to)} won it${x.pid ? ' — ' + nm(x.pid) : ''}${who(x)}` });
   /* A tap on the planned-subs card, as its own line: which planned change it
@@ -9082,7 +9095,7 @@ function viewTrack() {
 
   const rows = tracked(t);
   const setCard = `<div class="card"><div class="spread" style="margin-bottom:10px">
-      <h2>Set pieces and fouls</h2>${canEditTeam(t.id) ? '<button class="btn quiet sm" data-act="trackcfg">Choose</button>' : ''}</div>
+      <h2>${countsHeading(rows)}</h2>${canEditTeam(t.id) ? '<button class="btn quiet sm" data-act="trackcfg">Choose</button>' : ''}</div>
     ${rows.length ? `<div class="tallygrid">
       <span></span><span class="tallyhead">${us}</span><span class="tallyhead">${them}</span>
       ${rows.map(e => `<span class="tallylbl">${e.label}<span class="conv">${e.who}</span></span>
@@ -9267,7 +9280,7 @@ function viewStats() {
     </div></div>` : '';
 
   const evRows = tracked(t).filter(e => evCount(m, e.k, 'us') + evCount(m, e.k, 'them') > 0);
-  const evCard = evRows.length ? `<div class="card"><h2 style="margin-bottom:10px">Set pieces and fouls</h2>
+  const evCard = evRows.length ? `<div class="card"><h2 style="margin-bottom:10px">${countsHeading(evRows)}</h2>
     <div class="statgrid" style="grid-template-columns:1fr 48px 48px">
       <span></span><span class="tallyhead">${us}</span><span class="tallyhead">${them}</span>
       ${evRows.map(e => `<span class="tallylbl">${e.label}<span class="conv">${e.who}</span></span>
@@ -10028,8 +10041,10 @@ function feedItems(t, m) {
   for (const x of shotList(m))
     out.push({ t: x.t, key: 'shot:' + x.id, kind: 'shot', side: x.side, minor: true,
       title: `Shot ${x.onTarget ? 'on target' : 'off target'} — ${sideName(x.side)}`, detail: x.side === 'us' && x.pid ? nm(x.pid) : '' });
+  /* A sub the tracker marked is a sub in the feed too, by side and naming
+     nobody; for the other team it is the only word of a change there is. */
   for (const x of evList(m))
-    out.push({ t: x.t, key: 'ev:' + x.id, kind: 'set', side: x.side, minor: true,
+    out.push({ t: x.t, key: 'ev:' + x.id, kind: x.kind === 'sub' ? 'sub' : 'set', side: x.side, minor: true,
       title: `${evLabel(x.kind).replace(/s$/, '')} — ${sideName(x.side)}`, detail: '' });
 
   /* Newest first. The clock stands still through a break, so a half's end, the
@@ -22319,7 +22334,7 @@ function sheetEvent(id) {
   openSheet(`<h3>${esc(evLabel(x.kind).replace(/s$/, ''))} at ${mmss(x.t)} — ${ours ? teamLabel(t) : esc(m.opponent || 'Them')}</h3>
     <label class="field"><span>Time</span><input type="text" id="evT" value="${mmss(x.t)}" inputmode="numeric" data-clock></label>
     <p class="muted" style="margin-top:-6px">Counted as ${esc(evOf(x.kind).who)} ${ours ? teamLabel(t) : esc(m.opponent || 'them')}.</p>
-    ${ours ? `<p class="lbl">${esc(evOf(x.kind).attr)} (optional)</p>
+    ${evOf(x.kind).noWho ? '<p class="muted">A mark that a change was made, and nothing about who.</p>' : ours ? `<p class="lbl">${esc(evOf(x.kind).attr)} (optional)</p>
     <div class="chips" style="margin-bottom:14px">
       ${squad(t, m).map(p => `<button class="chip" type="button" data-act="pickscorer" data-grp="who" data-v="${p.id}" aria-pressed="${x.pid === p.id}">${chipName(p)}</button>`).join('')}
     </div>` : '<p class="muted">Opponent event — nothing to attribute.</p>'}
@@ -22330,7 +22345,7 @@ function sheetEvent(id) {
 function sheetTrackCfg() {
   const t = team();
   openSheet(`<h3>What to count</h3>
-    <p class="muted" style="margin-top:0">Switch off anything that turns into more tapping than it is worth. Throw-ins run to forty a game in youth soccer; corners and fouls are far rarer and tell you more.</p>
+    <p class="muted" style="margin-top:0">Switch off anything that turns into more tapping than it is worth. Throw-ins run to forty a game in youth soccer; corners and fouls are far rarer and tell you more. Subs is one tap when either team makes a change: the minute, and nothing about who.</p>
     <div class="chips" style="margin-bottom:16px">
       ${EVENTS.map(e => `<button class="chip" type="button" data-act="togglechip" data-grp="track" data-v="${e.k}" aria-pressed="${(t.track || {})[e.k] !== false}">${e.label}</button>`).join('')}
     </div>
