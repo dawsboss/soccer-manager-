@@ -234,6 +234,17 @@ const SNAP = () => {
       if (await tap('#subtabs [data-gview="stats"]', 'Stats')) await capture('stats', 'Stats');
       if (await tap('#subtabs [data-gview="track"]', 'Track') && await tap('#app [data-act="trackfull"]', 'Full screen')) await capture('track-full', "Track's full screen");
     },
+    // the two doors (DOORS.md, step 3): Teams, the switch on the title row, Sessions Home, its bar, its More and its Settings
+    doors: async () => {
+      await tap('[data-act="roleok"]');
+      if (persona === 'jaz') await go('#/team/sbA/season');
+      await tab('home'); await capture('teams-home', 'Teams: Home, the switch to Sessions at the end of the title row');
+      if (await tap('#titlebar [data-act="door"]', 'the title-row switch')) await capture('sessions-home', 'Sessions: Home, its own bar underneath');
+      await tab('sessions'); await capture('sessions-list', 'Sessions: the third tab');
+      await tab('more'); await capture('sessions-more', 'Sessions: More, with the Teams row'); await closeSheet();
+      await go('#/settings'); await capture('sessions-settings', 'Sessions: Settings, Club · Sessions');
+      if (await tap('#titlebar [data-act="door"]', 'back to Teams')) await capture('teams-again', 'Teams again');
+    },
     staff: async () => {
       await capture('home-first', 'Home as this role');
       await tap('[data-act="roleok"]');
