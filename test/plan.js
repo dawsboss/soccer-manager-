@@ -422,12 +422,43 @@ console.log('\n--- a plan copied from another game ---');
   check('— with who was where', Object.entries(A.playedBlocks(A.state.matches.g0)[2].assign).sort().join(' '), 'sGK,p5 sLB,p4 sRB,p2 sST,p1');
   A.click({ act: 'copyplan' });
   check('the sheet says which', /v Lakeside · as it was played/.test(sheet()) && /3 snapshots/.test(sheet()), true);
-  A.click({ act: 'copyplanmode', ko: '1' });
-  check('Kick-off only counts one', A.ui.copyKO && /1 snapshot</.test(sheet()), true);
+  A.click({ act: 'copyplanmode', mode: 'ko' });
+  check('Kick-off only counts one', A.ui.copyMode === 'ko' && /1 snapshot</.test(sheet()), true);
   A.click({ act: 'copyplanfrom', id: 'g0~played' });
   check('— and copies who started where, alone', A.planBlocks(g6()).map(b => b.start + ':' + Object.entries(b.assign).sort().join(' ')), ['0:sGK,p5 sLB,p1 sRB,p2 sST,p3']);
   check('— said', /^Kick-off lineup copied from v Lakeside/.test(A.lastToast()), true);
-  A.ui.copyKO = false;
+  A.ui.copyMode = null;
+
+  /* Working on a plan, one moment of another game goes into the snapshot she is on. */
+  const g7 = setup();
+  A.state.matches.g0 = other();
+  A.state.matches.g0.plan.blocks[1].assign = { sGK: 'p5', sLB: 'p4', sRB: 'p3', sST: 'p2' };
+  g7().plan = { manual: true, blocks: [
+    { start: 0, ids: ['p5', 'p1'], assign: { sGK: 'p5', sLB: 'p1' } },
+    { start: 2400, ids: ['p5'], assign: { sGK: 'p5' } }] };
+  A.ui.snapAt = 2400; A.ui.view = 'game'; A.ui.gameView = 'plan';
+  h = html();
+  check('the plan being made offers a lineup from another game', /data-act="copyplan">Copy from a game</.test(h), true);
+  check('— and from an AI', /Bring in a lineup:[\s\S]*data-act="aihelp" data-scope="game"/.test(h), true);
+  A.click({ act: 'copyplan' });
+  check('the sheet opens on the snapshot she is on', /aria-current="true">Just the 40:00 snapshot</.test(sheet()) && /1 snapshot</.test(sheet()), true);
+  global.confirm = () => true;
+  A.click({ act: 'copyplanfrom', id: 'g0' });
+  check('— that moment of the other game goes into it', Object.entries(A.planBlocks(g7())[1].assign).sort().join(' '), 'sGK,p5 sLB,p4 sRB,p3 sST,p2');
+  check('— and the rest of her plan stays hers', Object.entries(A.planBlocks(g7())[0].assign).sort().join(' '), 'sGK,p5 sLB,p1');
+  check('— ids agree with the spots', coherent(g7()), true);
+  check('— said', /^40:00 lineup copied from v Lakeside/.test(A.lastToast()), true);
+  global.confirm = () => false;
+  A.click({ act: 'copyplan' });
+  A.click({ act: 'copyplanmode', mode: 'snap' });
+  A.planBlocks(g7())[1].assign = { sGK: 'p5' };
+  A.click({ act: 'copyplanfrom', id: 'g0' });
+  check('over a snapshot with players in it, no keeps hers', Object.keys(A.planBlocks(g7())[1].assign).join(), 'sGK');
+  global.confirm = () => true;
+  A.click({ act: 'copyplanmode', mode: 'all' });
+  check('the whole game is still a choice', /aria-current="true">The whole game</.test(sheet()) && /2 snapshots/.test(sheet()), true);
+  A.click({ act: 'copyplanmode', mode: 'nonsense' });
+  check('a mode the sheet does not offer is ignored', A.ui.copyMode, 'all');
 }
 
 H.summary('the Plan tab\'s snapshots');

@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '195';
+const BUILD = '196';
 const BUILT = '2026-10-25';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -10814,12 +10814,15 @@ function viewPlan() {
       <div class="plist">${on.map(prow).join('') || '<p class="muted" style="margin:2px 0">Nobody yet.</p>'}</div>`;
 
     snaps = `<div class="card"><div class="spread" style="margin-bottom:10px"><h2>Lineup</h2>
-        <span class="muted">${esc(m.formation.name || '')}${locked ? '' : ` ${canGameEdit(m) && plansToCopy(t, m).length ? '<button class="btn quiet sm" data-act="copyplan">Copy from a game</button> ' : ''}<button class="btn quiet sm" data-act="snapwipe">Clear plan</button>`}</span></div>
+        <span class="muted">${esc(m.formation.name || '')}${locked ? '' : ' <button class="btn quiet sm" data-act="snapwipe">Clear plan</button>'}</span></div>
       ${strip}${when}${pitch}${hint}${diff}
       <div class="row" style="margin-top:10px">${locked ? '' : `<button class="btn quiet sm" data-act="snapadd">Add the next change</button>
         ${prev && emptyN && Object.values(prev.assign || {}).some(id => !Object.values(assign).includes(id)) ? '<button class="btn quiet sm" data-act="snapfill">Fill the gaps from the one before</button>' : ''}`}
         <button class="btn quiet sm" data-act="bench" data-start="${cur.start}">Tell the bench</button>
         ${el > 0 && !m.ended ? `<button class="btn quiet sm" data-act="applyblock" data-start="${cur.start}">Put this on the pitch now</button>` : ''}</div>
+      ${locked || !canGameEdit(m) ? '' : `<div class="row" style="margin-top:10px;flex-wrap:wrap;gap:6px"><span class="muted">Bring in a lineup:</span>
+        ${plansToCopy(t, m).length ? '<button class="btn quiet sm" data-act="copyplan">Copy from a game</button>' : ''}
+        ${restricted() ? '' : '<button class="btn quiet sm" data-act="aihelp" data-scope="game">Ask an AI</button>'}</div>`}
       ${el <= 0 && !m.ended && !locked ? `<p class="muted" style="margin:10px 0 0">Lock the plan in and the starters go on from the Subs card at kick-off.</p>` : ''}
       ${list}</div>`;
   }
@@ -24287,22 +24290,63 @@ function copyPlanBtn(t, m) {
 }
 function sheetCopyPlan(t, m) {
   const list = plansToCopy(t, m); if (!list.length) { toast('No other game of this team has a lineup yet'); return; }
-  const ko = !!ui.copyKO;
+  const mode = copyMode(m), ko = mode === 'ko', snap = mode === 'snap';
+  const at = copyTarget(m);
+  const atLabel = at ? (at.start ? mmss(at.start) : 'kick-off') : '';
   openSheet(`<h3>Copy a lineup</h3>
-    <div class="row" style="gap:6px;margin-bottom:10px">
-      <button class="opt" type="button" style="width:auto" data-act="copyplanmode" data-ko="0" aria-current="${!ko}">The whole game</button>
-      <button class="opt" type="button" style="width:auto" data-act="copyplanmode" data-ko="1" aria-current="${ko}">Kick-off only</button></div>
-    <p class="muted" style="margin-top:0">${ko ? 'Who started where comes over, to plan the changes here.' : 'Its snapshots come over as they are, to change here.'} Anyone out for this game is left out.${planBlocks(m).length ? ' It takes the place of the plan you have, once you say so.' : ''}</p>
-    ${list.map(c => { const g = c.g, n = ko ? 1 : c.blocks.length; return `<button class="opt spread" type="button" data-act="copyplanfrom" data-id="${esc(c.id)}">
+    <div class="row" style="gap:6px;margin-bottom:10px;flex-wrap:wrap">
+      ${at ? `<button class="opt" type="button" style="width:auto" data-act="copyplanmode" data-mode="snap" aria-current="${snap}">Just the ${esc(atLabel)} snapshot</button>` : ''}
+      <button class="opt" type="button" style="width:auto" data-act="copyplanmode" data-mode="all" aria-current="${mode === 'all'}">The whole game</button>
+      <button class="opt" type="button" style="width:auto" data-act="copyplanmode" data-mode="ko" aria-current="${ko}">Kick-off only</button></div>
+    <p class="muted" style="margin-top:0">${snap ? `Who was where at that point of that game goes into your ${esc(atLabel)} snapshot, and the rest of your plan stays as it is.` : ko ? 'Who started where comes over, to plan the changes here.' : 'Its snapshots come over as they are, to change here.'} Anyone out for this game is left out.${planBlocks(m).length && !snap ? ' It takes the place of the plan you have, once you say so.' : ''}</p>
+    ${list.map(c => { const g = c.g, n = ko || snap ? 1 : c.blocks.length; return `<button class="opt spread" type="button" data-act="copyplanfrom" data-id="${esc(c.id)}">
       <span>${esc(g.opponent ? 'v ' + g.opponent : 'Game')} · ${c.how === 'plan' ? 'the plan' : 'as it was played'}<span class="rowsub">${esc([g.date ? shortDate(g.date) : '', g.formation ? g.formation.name : 'no shape', `${g.periodCount || 2} × ${g.periodMinutes || 40} min`].filter(Boolean).join(' · '))}</span></span>
       <span class="muted">${n} snapshot${n === 1 ? '' : 's'}</span></button>`; }).join('')}
     <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`);
 }
+/* Working on a plan, a coach often wants one moment of another game, not the
+   whole of it (the owner, 2026-11-07: even if a plan is being made, let her
+   pull that in). So while there is a plan the sheet offers the snapshot she is
+   on as well: whoever was where at that point of the other game goes into it,
+   and every other snapshot stays hers. The default is that snapshot while she
+   has a plan, the whole game while she has none. */
+function copyMode(m) {
+  const md = ui.copyMode || (planBlocks(m).length ? 'snap' : 'all');
+  return md === 'snap' && !copyTarget(m) ? 'all' : md;
+}
+function copyTarget(m) {
+  const bs = planBlocks(m);
+  return bs.length ? bs.find(b => b.start === ui.snapAt) || bs[0] : null;
+}
+function copyIntoSnap(t, m, pick) {
+  const target = copyTarget(m); if (!target) return;
+  let from = null;
+  for (const b of pick.blocks) if (b.start <= target.start) from = b;
+  from = from || pick.blocks[0];
+  const shape = new Set(((m.formation && m.formation.slots) || []).map(x => x.id));
+  const ok = new Set(squad(t, m).map(p => p.id));
+  const assign = {}, left = new Set();
+  let unplaced = 0;
+  for (const [sid, pid] of Object.entries(from.assign || {})) {
+    if (!ok.has(pid)) left.add(pid);
+    else if (!shape.has(sid)) unplaced++;
+    else assign[sid] = pid;
+  }
+  if (!Object.keys(assign).length) { toast('None of that lineup fits this game\'s spots — copy the whole game instead'); return; }
+  const at = target.start ? mmss(target.start) : 'kick-off';
+  if (Object.keys(target.assign || {}).length && !confirm(`Replace who is in your ${at} snapshot with the lineup from ${pick.g.opponent ? 'v ' + pick.g.opponent : 'that game'}?`)) return;
+  savePlan(m, planBlocks(m).map(b => b === target ? { start: b.start, assign } : b));
+  closeSheet();
+  const nm = id => ((t.players || {})[id] || {}).name || 'someone';
+  toast(`${at === 'kick-off' ? 'Kick-off' : at} lineup copied from ${pick.g.opponent ? 'v ' + pick.g.opponent : 'that game'}${left.size ? ` — ${[...left].map(nm).join(', ')} left out` : ''}${unplaced ? ` — ${unplaced} spot${unplaced === 1 ? '' : 's'} not in this shape` : ''}`);
+}
 function copyPlanFrom(t, m, pick) {
   if (planLocked(m)) { toast('Your plan is locked in — unlock it first'); return; }
+  if (copyMode(m) === 'snap') { copyIntoSnap(t, m, pick); return; }
   const src = pick.g;
   let srcBlocks = pick.blocks;
-  if (ui.copyKO) srcBlocks = srcBlocks.filter(b => b.start === 0).slice(0, 1);
+  const ko = copyMode(m) === 'ko';
+  if (ko) srcBlocks = srcBlocks.filter(b => b.start === 0).slice(0, 1);
   const have_ = planBlocks(m).length;
   if (have_ && !confirm(`Replace your ${have_} snapshot${have_ === 1 ? '' : 's'} with the lineup from ${src.opponent ? 'v ' + src.opponent : 'that game'}?`)) return;
   const used = new Set(srcBlocks.flatMap(b => Object.keys(b.assign || {})));
@@ -24324,7 +24368,7 @@ function copyPlanFrom(t, m, pick) {
   if (!used.size) commit(`matches/${m.id}/plan`, { blocks: srcBlocks.filter(b => b.start < end).map(b => ({ start: b.start, ids: (b.ids || []).filter(pid => ok.has(pid) || (left.add(pid), false)), assign: {} })) });
   else savePlan(m, blocks);
   const nm = id => ((t.players || {})[id] || {}).name || 'someone';
-  toast(`${ui.copyKO ? 'Kick-off lineup' : 'Plan'} copied from ${src.opponent ? 'v ' + src.opponent : 'that game'}${needShape ? ', with its shape' : ''}${left.size ? ` — ${[...left].map(nm).join(', ')} left out` : ''}`);
+  toast(`${ko ? 'Kick-off lineup' : 'Plan'} copied from ${src.opponent ? 'v ' + src.opponent : 'that game'}${needShape ? ', with its shape' : ''}${left.size ? ` — ${[...left].map(nm).join(', ')} left out` : ''}`);
 }
 
 function sheetPlan() {
@@ -26534,8 +26578,8 @@ function onAct(e) {
     if (d.checked) { (ui.availOk = ui.availOk || {})[m.id] = 1; closeSheet(); }
     else if (asksWhoComing(t, m)) { sheetAvailability(a, d.id); return; }
   }
-  if (a === 'copyplan') { if (m && canGameEdit(m)) sheetCopyPlan(t, m); return; }
-  if (a === 'copyplanmode') { if (m && canGameEdit(m)) { ui.copyKO = d.ko === '1'; sheetCopyPlan(t, m); } return; }
+  if (a === 'copyplan') { if (m && canGameEdit(m)) { ui.copyMode = null; sheetCopyPlan(t, m); } return; }
+  if (a === 'copyplanmode') { if (m && canGameEdit(m) && ['all', 'ko', 'snap'].includes(d.mode)) { ui.copyMode = d.mode; sheetCopyPlan(t, m); } return; }
   if (a === 'copyplanfrom') {
     if (!m || !canGameEdit(m)) return;
     const pick = plansToCopy(t, m).find(c => c.id === d.id); if (!pick) return;
