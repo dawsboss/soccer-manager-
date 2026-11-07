@@ -254,7 +254,7 @@ const EXPORTS = `{
   /* where you are, and the way around (build 141) */
   titleBar, tabBar, navTabs, navKind, navGames, viewGames, nextGames, navTeams, tabFor, upView, homeView, sheetMore, sheetAccount, VIEW_TITLE,
   /* two doors, Teams and Sessions (DOORS.md) */
-  DOORS, hasDoor, doorOf, curDoor, defaultDoor, settleDoor, doorHome, doorRow, viewSessHome, SESSION_VIEWS,
+  DOORS, DOOR_LINE, DOOR_REFUSED, hasDoor, myDoors, doorOf, curDoor, defaultDoor, settleDoor, doorHome, openDoorHome, doorPrefix, sheetDoors, viewSessHome, viewSchedHome, SESSION_VIEWS, TRAINING_VIEWS, SCHED_VIEWS,
   /* a session coach, a coach of no team (DOORS.md) */
   isSessionCoach, coachesSessions, sessOnly, isCoachAny, INVITE_ROLES, CLUB_ROLES, sheetPersonRoles, sessCoaches,
   /* copy and vocabulary (UX-REVIEW.md, 2; build 144) */

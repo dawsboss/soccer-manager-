@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '193';
+const BUILD = '194';
 const BUILT = '2026-10-25';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -1778,11 +1778,11 @@ const HOWTO = [
       { say: 'Home opens on your child: this season in one line, then the next game or practice with Going, Not going and Maybe under it.', who: ['family'] },
       { say: 'Home opens on your team: the game being played, the next game, the next practice, then what is coming up.', who: ['staff'] },
       { say: 'The next game and practice each carry what you need on the day: when, where, directions, and a tap into the game itself.' },
-      { say: 'Tap a card to open it: the game, the practice, or the team on the calendar.', go: { act: 'tab', tab: 'home' }, label: 'Open Home' }
+      { say: 'Tap a card to open it: the game, the practice, or the team on the calendar.', go: { act: 'tab', tab: 'home', door: 'teams' }, label: 'Open Home' }
     ] },
   { id: 'coming', title: 'Say whether your child is coming', who: ['family'], lead: 'One tap, and the coach knows.',
     steps: [
-      { say: 'Open Home. The next game or practice is the first card, with Going, Not going and Maybe on it.', go: { act: 'tab', tab: 'home' }, label: 'Open Home' },
+      { say: 'Open Home. The next game or practice is the first card, with Going, Not going and Maybe on it.', go: { act: 'tab', tab: 'home', door: 'teams' }, label: 'Open Home' },
       { say: 'Tap your answer. A bar sweeps across it until the club has it; with no signal it waits on the phone and goes later.' },
       { say: 'For another day, open the Calendar and tap the game or practice. Your answer is first in its sheet, with a box for a note to the coach.', go: { act: 'tab', tab: 'calendar' }, label: 'Open the Calendar' },
       { say: 'Change your answer any time before kick-off. The coach sees who is coming and plans the game with it.' }
@@ -1866,30 +1866,36 @@ const HOWTO = [
     ] },
   { id: 'practice', title: 'Practices, plans and drills', who: ['train'], lead: 'A library of drills, and a plan for each practice.',
     steps: [
-      { say: 'Training is the team’s third tab: drills filtered by age, how many players and what you are working on, each with a diagram.', go: { act: 'goview', v: 'practice' }, label: 'Open Training' },
+      { say: 'Training is a part of the app of its own: switch to it with the button at the top. Home there is your team’s practices, each with its plan or a way to plan it.', go: { act: 'goview', v: 'practice' }, label: 'Open Training' },
       { say: 'A plan hangs off a practice on the calendar: open the practice, plan it, add drills with minutes. Run it counts each one down on the night.' },
-      { say: 'Drills under More is the library, the club’s own and yours. Save to mine copies any drill; Share with the club gives it to every coach.', go: { act: 'moredrills' }, label: 'Open Drills' },
-      { say: 'What needs work, on Season, reads the last games and suggests the drills that answer them.', who: ['coach'] }
+      { say: 'Drills, the tab beside Home in Training, is the library: filtered by age, how many players and what you are working on, each with a diagram. The club’s own and yours are shelves on it. Save to mine copies any drill; Share with the club gives it to every coach.', go: { act: 'moredrills' }, label: 'Open Drills' },
+      { say: 'What needs work, on Training’s Home, reads the last games and suggests the drills that answer them.', who: ['coach'] }
     ] },
   { id: 'register', title: 'Take the register', who: ['coach', 'helper'], lead: 'Who came, and the season counted from it.',
     steps: [
-      { say: 'Home asks Who came to the last practice? ahead of what is next, for whoever takes the register.', go: { act: 'tab', tab: 'home' }, label: 'Open Home' },
+      { say: 'Home asks Who came to the last practice? ahead of what is next, for whoever takes the register.', go: { act: 'tab', tab: 'home', door: 'teams' }, label: 'Open Home' },
       { say: 'Season, then Attendance: tick who came. It starts from the families’ answers, and a miss nobody warned about is counted apart.', go: { act: 'goview', v: 'attend' }, label: 'Open Attendance' },
       { say: 'A family sees their own child’s record on Home, as came to 4 of 5 practices.' }
     ] },
-  { id: 'club', title: 'Run the club', who: ['admin'], lead: 'People, fields, the term, and a copy of everything.',
+  { id: 'club', title: 'Run the club', who: ['admin'], lead: 'People, fields, and a copy of everything.',
     steps: [
-      { say: 'Settings, then Club: Club details, People, the Scheduler, Fields and permits, Coach compliance and Bulk import.', go: { act: 'goview', v: 'setup' }, label: 'Open Settings' },
+      { say: 'Settings, then Club: Club details, People, Fields and permits, Coach compliance and Bulk import.', go: { act: 'goview', v: 'setup' }, label: 'Open Settings' },
       { say: 'People is who is in and as what: invite someone, take a role away, name an assistant coach. Only the club owner takes an admin away.', go: { act: 'goview', v: 'people' }, label: 'Open People' },
-      { say: 'The Scheduler lays every team’s practices out on the club’s fields by the rules you set, and writes the term onto every calendar.', go: { act: 'goview', v: 'scheduler' }, label: 'Open the Scheduler' },
       { say: 'Bulk import takes a season from a spreadsheet: players, games, practices and fields. Check readiness, under Advanced, says what the club still needs set up.' },
       { say: 'Download a copy, under Advanced, keeps a backup on your phone. The club keeps one every night as well.' }
+    ] },
+  { id: 'scheduler', title: 'Lay out the club’s week', who: ['sched'], lead: 'Every team’s practices on the club’s fields, by the rules you set.',
+    steps: [
+      { say: 'The Scheduler is a part of the app of its own: switch to it with the button at the top. Home there says what needs looking at this week: a team short of a practice, a coach due in two places, a slot still to settle.', go: { act: 'goview', v: 'schome' }, label: 'Open the Scheduler' },
+      { say: 'The board, the tab beside Home, lays the week out field by field. Tap a team, then a half hour, and it says what the rules make of it before you place it.', who: ['admin'], go: { act: 'goview', v: 'scheduler' }, label: 'Open the board' },
+      { say: 'Lay it out for me fills the week for every team still short, as a draft on your phone; Put it on the calendars writes the term onto every team’s calendar.', who: ['admin'] },
+      { say: 'Coaches read the board, their teams in colour, and say on their own weekly slot whether it works for them.' }
     ] },
   { id: 'sessions', title: 'Sessions: 1-1s and small groups', who: ['sessions'], lead: 'Coaching that belongs to no team, booked and counted.',
     steps: [
       { say: 'Sessions lists what you can book for your child: a coach’s bookable times and open groups. Ask for a place, and the club confirms it.', who: ['family'], go: { act: 'goview', v: 'shome' }, label: 'Open Sessions' },
       { say: 'Offer your bookable times on My calendar. Families book them, the club counts the places, and a full time has a waiting list.', who: ['coach', 'sesscoach'], go: { act: 'tab', tab: 'calendar' }, label: 'Open the Calendar' },
-      { say: 'The Sessions door, from More or the switch at the top, is the club’s business side: fees, coach hours and fields.', who: ['admin', 'sesscoach'] },
+      { say: 'Sessions is a part of the app of its own: switch to it with the button at the top. It is the club’s business side: fees, coach hours and fields.', who: ['admin', 'sesscoach'] },
       { say: 'A session reaches the families on the calendar like a practice, and its coach takes the register the same way.' }
     ] }
 ];
@@ -1909,6 +1915,7 @@ function howtoWho() {
   if (['coach', 'helper', 'tracker', 'admin', 'sesscoach'].some(k => w.has(k)) || (me && isViewer(me.uid))) w.add('staff');
   if (canSessions()) w.add('sessions');
   if (canTrain()) w.add('train');
+  if (canSched()) w.add('sched');
   return w;
 }
 const howtoFits = (x, w) => !x.who || x.who.some(k => w.has(k));
@@ -7846,8 +7853,12 @@ function render() {
   // a game screen with no game is just four buttons that do nothing
   if (inGame && !match() && !teamMatches(ui.teamId).length) { ui.view = 'season'; inGame = false; }
   if ((ui.view === 'admin' || ui.view === 'regs' || ui.view === 'comply') && !canAdmin()) ui.view = 'club';
-  // the Scheduler is read by every coach too, her teams lit (SCHEDULER.md); the rest of the club's screens are the admins'
-  if (ui.view === 'scheduler' && !canSched()) ui.view = 'club';
+  // the Scheduler's door is read by every coach too, her teams lit (SCHEDULER.md); the rest of the club's screens are the admins'
+  if (SCHED_VIEWS.includes(ui.view) && !canSched()) ui.view = 'club';
+  /* Training's door is a coach's, an assistant coach's and an admin's, on any
+     team: the library isn't about one team, and a parent or a tracker never
+     gets the door at all. */
+  if (ui.view === 'practice' && !hasDoor('training')) ui.view = 'season';
   // My players is the top of a family's Home since build 153 (viewFamSeason); staff with a child keep it under More
   if (ui.view === 'mine' && navKind() === 'family') ui.view = 'season';
   if (ui.view === 'mine' && !anyPlayers()) ui.view = 'calendar';
@@ -7872,16 +7883,10 @@ function render() {
   if (ui.view === 'roster' && readerRole(lim)) ui.view = 'season';
   // Season's own screens are the coach's view of the team: a family has her own Season, and the register is only those who take it
   if (SEASON_VIEWS.includes(ui.view) && (navKind() === 'family' || (ui.view === 'attend' && !canCalTeam(ui.teamId)))) ui.view = 'season';
-  /* Practice is a coach's and an admin's, on any team: the library isn't
-     about one team, and a parent or a tracker never gets the tab at all. */
-  const train = canTrain();
-  const pb = document.querySelector('#tabs [data-view="practice"]');
-  if (pb) pb.hidden = !train;
-  if (ui.view === 'practice' && !train) ui.view = 'season';
   // a family past the club's deadline for her child's details: her calendar, messages and Home (the cards to finish), until it is done
   if (!shut && detailsBlocked() && !DETAILS_OPEN.has(ui.view)) { ui.view = doorHome(); inGame = false; }
-  // club admin, account settings and the person's calendar are not team-level, so the tab row steps aside
-  const teamLevel = ['season', 'roster', 'practice'].includes(ui.view);
+  // club admin, account settings and the person's calendar are not team-level, so the tab row steps aside; Training is a door of its own since build 194
+  const teamLevel = ['season', 'roster'].includes(ui.view);
   if (ui.view === 'people' && !canAdmin() && !teams().some(x => isCoach(x.id, me && me.uid))) ui.view = 'club';
   const tabView = ui.view === 'formation' ? (ui.editFid === GAME_SHAPE ? 'season' : 'admin') : inGame ? 'season' : ui.view;
   for (const b of document.querySelectorAll('#tabs button')) b.setAttribute('aria-current', String(b.dataset.view === tabView));
@@ -7992,7 +7997,7 @@ function render() {
           v === 'season' ? viewSeason() : v === 'teamstats' ? viewTeamStats() : v === 'minutes' ? viewMinutes() : v === 'attend' ? viewAttend() :
             v === 'formation' ? viewFormation() : v === 'games' ? viewGames() : v === 'club' ? viewClub() : v === 'people' ? viewPeople() : v === 'admin' ? viewAdmin()
               : v === 'mine' ? viewMine() : v === 'practice' ? viewPractice()
-                : v === 'inbox' ? viewInbox() : v === 'notes' ? viewNotes() : v === 'thread' ? viewThread() : v === 'sessions' ? viewSessions() : v === 'shome' ? viewSessHome() : v === 'scheduler' ? viewScheduler() : v === 'regs' ? viewRegs() : v === 'tryout' ? viewTryout() : v === 'comply' ? viewComply()
+                : v === 'inbox' ? viewInbox() : v === 'notes' ? viewNotes() : v === 'thread' ? viewThread() : v === 'sessions' ? viewSessions() : v === 'shome' ? viewSessHome() : v === 'schome' ? viewSchedHome() : v === 'scheduler' ? viewScheduler() : v === 'regs' ? viewRegs() : v === 'tryout' ? viewTryout() : v === 'comply' ? viewComply()
                 : v === 'setup' ? viewSetup() : v === 'guide' ? viewHowto() : viewCalendar());
   } finally { placeMemo = null; }
   syncHash();
@@ -8119,7 +8124,7 @@ const viewScope = (v = ui.view) => v === 'calendar' || v === 'mine' ? (me ? 'me'
 const VIEW_TITLE = {
   calendar: 'Calendar', setup: 'Settings', people: 'People', admin: 'Club details', sessions: 'Sessions',
   scheduler: 'Scheduler', inbox: 'Messages', thread: 'Messages', notes: 'What\'s new', mine: 'My players', formation: 'Shapes',
-  games: 'Games', regs: 'Registration', tryout: 'Tryouts', comply: 'Coach compliance', club: 'Club home', shome: 'Home', guide: 'How to'
+  games: 'Games', regs: 'Registration', tryout: 'Tryouts', comply: 'Coach compliance', club: 'Club home', shome: 'Home', schome: 'Home', guide: 'How to'
 };
 // the Sessions view draws three of Settings' screens too, each under its own name
 const screenTitle = v => v === 'sessions' && sessSetTab() ? SESS_SET[sessSetTab()] : VIEW_TITLE[v];
@@ -8141,36 +8146,59 @@ const screenTitle = v => v === 'sessions' && sessSetTab() ? SESS_SET[sessSetTab(
    and finds My players under More. The title row above says where she is,
    with a back arrow where there is somewhere up to go; the club's name on
    it is the club switcher; the top bar keeps the account alone. */
-/* Two doors, one app (DOORS.md; the owner, 2026-10-20): Teams is the
-   season (teams, games, practices, the Scheduler) and Sessions the business
-   (1-1s, groups, booking, fees, hours, fields), each with a bar of its own,
-   the same for everyone standing in it. A door is a mode the phone
-   remembers (ui.door), never a role and never written to the club. The
-   screen decides the door where it names one (doorOf), so a session alert
-   lands in Sessions and a game link in Teams; the remembered door decides
-   only the shared screens (Home, Calendar, Messages, More). Who has the
-   Sessions door is who has sessions at all (canSessions); whoever has one
-   door alone has no switch, and a tap at the other is refused in the
-   handler. */
-const DOORS = { teams: 'Teams', sessions: 'Sessions' };
-// the screens that are the Sessions door's own, and a tab's own screen inside it
+/* Four doors, one app (DOORS.md, the owner, 2026-10-20; TOOLS.md, the
+   owner, 2026-11-04: the point of the site is games and practices, when,
+   where, how long and who is going, and everything else that schedules or
+   plans is a tool of its own, the way Sessions is). Teams is the season
+   (teams, games, practices, who is coming, who came), Training the drills
+   and the practice plans, the Scheduler the club's week on its fields, and
+   Sessions the business (1-1s, groups, booking, fees, hours), each with a
+   bar of its own, the same for everyone standing in it. A door is a mode
+   the phone remembers (ui.door), never a role and never written to the
+   club. The screen decides the door where it names one (doorOf), so a
+   session alert lands in Sessions, a practice's plan in Training and a game
+   link in Teams; the remembered door decides only the shared screens
+   (Home, Calendar, Messages, More). Who has a door is who has its thing at
+   all (canSessions, canTrain, canSched); whoever has one door alone has no
+   switch, and a tap at another is refused in the handler. The switch is one
+   button, on the title row, and nowhere else (the owner, 2026-11-04:
+   *having multiple locations for doors scares me*): the other door for
+   whoever has two, a sheet of her doors for whoever has more. A link into a
+   tool (Plan on a practice) is a tap on a thing, not a switch, and Back
+   brings her back to where it was. */
+const DOORS = { teams: 'Teams', training: 'Training', scheduler: 'Scheduler', sessions: 'Sessions' };
+// one line each, on the switch sheet
+const DOOR_LINE = { teams: 'Your teams, games and practices', training: 'Drills and practice plans', scheduler: 'The club’s week on its fields', sessions: '1-1s, groups, booking and fees' };
+// what a tap at a door she does not have is told, in the handler
+const DOOR_REFUSED = { teams: 'Teams are for whoever is on one', training: 'Training is for coaches and admins', scheduler: 'The Scheduler is for coaches and club admins', sessions: 'Sessions are for coaches, admins and families' };
+// the screens that are each door's own, and a tab's own screen inside it
 const SESSION_VIEWS = ['sessions', 'shome'];
+const TRAINING_VIEWS = ['practice'];
+const SCHED_VIEWS = ['scheduler', 'schome'];
 /* A session coach with nothing of a team (no team she coaches, tracks or
    helps, no child, no fan's player, not a viewer or an admin) has the
    Sessions door alone: Teams would be a club of teams she may not touch. */
 const sessOnly = () => !!me && gated() && isSessionCoach(me.uid) && !canAdmin() && !isViewer(me.uid) && !anyPlayers()
   && !teams().some(t => isCoach(t.id, me.uid) || isTracker(t.id, me.uid) || isHelper(t.id, me.uid));
-const hasDoor = d => d === 'teams' ? !sessOnly() : (d === 'sessions' && canSessions());
+/* Training is whoever plans (a coach or an assistant coach of any team,
+   canTrain) and an admin, for the club's shelves; the Scheduler whoever
+   reads the board (canSched: an admin, or a coach of any team, read-only).
+   A family, a tracker, a viewer, a fan and a player's own sign-in have
+   neither, and their phones never ask for a plan, a shelf or the needs. */
+const hasDoor = d => d === 'teams' ? !sessOnly() : d === 'sessions' ? canSessions() : d === 'training' ? canTrain() || canAdmin() : d === 'scheduler' ? canSched() : false;
+const myDoors = () => Object.keys(DOORS).filter(hasDoor);
 /* Registrations are the Sessions door's (the owner, 2026-10-25: a season's
    children are added by their coach and their families let in by email, and
    a child is in the club whether she registers or not), and so are the fees
-   and the hours. Fields and permits are both doors': the Scheduler places
+   and the hours. Fields and permits are the club's: the Scheduler places
    practices on them as Sessions places sessions, so they open in whichever
    door she is standing in. People and Club details are the club's own, the
-   same from both. */
+   same from Teams and Sessions. */
 const doorOf = (v = ui.view) => v === 'sessions' && sessSetTab() === 'fields' ? null
   : SESSION_VIEWS.includes(v) || v === 'regs' ? 'sessions'
-  : TEAM_VIEWS.includes(v) || ['games', 'formation', 'scheduler', 'club', 'tryout', 'comply'].includes(v) ? 'teams' : null;
+  : TRAINING_VIEWS.includes(v) ? 'training'
+  : SCHED_VIEWS.includes(v) ? 'scheduler'
+  : TEAM_VIEWS.includes(v) || ['games', 'formation', 'club', 'tryout', 'comply'].includes(v) ? 'teams' : null;
 /* Where she starts, decided from where her uid appears, as navKind() decides
    Home: a family whose only children are on no team is the person the
    Sessions door is for, and opens in it. Everyone else opens in Teams. */
@@ -8190,8 +8218,16 @@ function curDoor() {
 }
 // settled once per render, so the bar, the title and Home agree
 function settleDoor() { ui.door = curDoor(); return ui.door; }
-// the door's Home: a team's (homeView) in Teams, the Sessions Home in Sessions
-const doorHome = () => curDoor() === 'sessions' ? 'shome' : homeView();
+// the door's Home: a team's (homeView) in Teams, the plans in Training, the week in the Scheduler, the Sessions Home in Sessions
+const doorHome = () => { const d = curDoor(); return d === 'sessions' ? 'shome' : d === 'training' ? 'practice' : d === 'scheduler' ? 'schome' : homeView(); };
+/* Going to a door's Home: its screen, and in Training the plans with
+   nothing open, so Home is the top of it whatever was open there. */
+function openDoorHome(d = curDoor()) {
+  if (d === 'training') { const p = practiceUi(); p.tab = 'plans'; p.open = null; p.pick = null; }
+  ui.view = d === 'sessions' ? 'shome' : d === 'training' ? 'practice' : d === 'scheduler' ? 'schome' : homeView();
+}
+// the door's name on the club line, on its own screens, so a glance tells which tool she is in
+const doorPrefix = (v = ui.view) => { const d = curDoor(); return d !== 'teams' && doorOf(v) === d ? DOORS[d] + ' · ' : ''; };
 function navKind() {
   if (!me) return 'staff';
   if (canAdmin() || isViewer(me.uid)) return 'staff';
@@ -8237,15 +8273,22 @@ const NAV_ICON = {
   messages: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.9A8 8 0 1 1 21 12z"/></svg>',
   more: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2.2"/><circle cx="12" cy="12" r="2.2"/><circle cx="19" cy="12" r="2.2"/></svg>',
   // a training cone: the Sessions door's own mark, on its tab and on the switch to it
-  sessions: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 4h5l3 15.5h-11z"/><path d="M4 19.5h16"/><path d="M8.3 10h7.4M7.4 14.5h9.2"/></svg>'
+  sessions: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 4h5l3 15.5h-11z"/><path d="M4 19.5h16"/><path d="M8.3 10h7.4M7.4 14.5h9.2"/></svg>',
+  // a whistle: the Training door's mark, on its Drills tab and on the switch (never the cone, which is Sessions')
+  drills: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="14.5" r="4.5"/><path d="M12.4 11.4 20 8.6v4l-6.6 1.2"/><path d="M9 10V8.3"/></svg>',
+  // a timetable with one block placed on it: the Scheduler's mark, not the Calendar tab's month
+  scheduler: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M9.2 9.5v10M14.8 9.5v10"/><path d="M11 12.5h2.4v3.5H11z" fill="currentColor" stroke="none"/></svg>'
 };
-// the Teams door's mark is the Game tab's ball; each door has its own icon, shown on the switch (the owner, 2026-10-20)
-const DOOR_ICON = { teams: NAV_ICON.game, sessions: NAV_ICON.sessions };
+// each door's mark is its third tab's: the ball, the whistle, the timetable, the cone; shown on the switch (the owner, 2026-10-20)
+const DOOR_ICON = { teams: NAV_ICON.game, training: NAV_ICON.drills, scheduler: NAV_ICON.scheduler, sessions: NAV_ICON.sessions };
 function navTabs() {
-  // the dot means being played, on any team of hers; the picker or the header names which
-  const out = curDoor() === 'sessions'
-    ? [{ id: 'home', label: 'Home' }, { id: 'calendar', label: 'Calendar' }, { id: 'sessions', label: 'Sessions' }]
-    : [{ id: 'home', label: 'Home' }, { id: 'calendar', label: 'Calendar' }, { id: 'game', label: 'Game', live: navGames().some(g => gameStatus(g) === 'live') }];
+  // each door's third tab is its own thing; the dot on Game means being played, on any team of hers, the picker or the header naming which
+  const d = curDoor();
+  const third = d === 'sessions' ? { id: 'sessions', label: 'Sessions' }
+    : d === 'training' ? { id: 'drills', label: 'Drills' }
+      : d === 'scheduler' ? { id: 'scheduler', label: 'Scheduler' }
+        : { id: 'game', label: 'Game', live: navGames().some(g => gameStatus(g) === 'live') };
+  const out = [{ id: 'home', label: 'Home' }, { id: 'calendar', label: 'Calendar' }, third];
   // Messages once the club has them (an admin, and a team of hers); the tab is not drawn dead
   if (msgsOn()) out.push({ id: 'messages', label: 'Messages', count: 'tabMsgN' });
   out.push({ id: 'more', label: 'More', count: 'tabMoreN' });
@@ -8257,9 +8300,12 @@ function navTabs() {
 function tabFor(v = ui.view) {
   if (v === 'calendar') return 'calendar';
   if (v === 'inbox' || v === 'thread') return 'messages';
-  // the Sessions door: its Home, and the list of sessions (Fields, fees and hours are Settings' screens, under More)
-  if (v === 'shome') return 'home';
+  // each door's Home, and its third tab (Fields, fees and hours are Settings' screens, under More)
+  if (v === 'shome' || v === 'schome') return 'home';
   if (v === 'sessions') return sessSetTab() ? 'more' : 'sessions';
+  // the Training door: the plans are its Home; the library and the positions guide its Drills tab
+  if (v === 'practice') return practiceUi().tab === 'plans' ? 'home' : 'drills';
+  if (v === 'scheduler') return 'scheduler';
   if (v === 'game' || v === 'games' || (v === 'formation' && ui.editFid === GAME_SHAPE)) return 'game';
   if (TEAM_VIEWS.includes(v)) return 'home';
   if (v === 'club' && homeView() === 'club') return 'home';
@@ -8287,11 +8333,11 @@ function upView(v = ui.view) {
   if (v === 'regs' && (ui.regs || {}).prog) return 'regs';
   if (v === 'tryout' && (ui.tryout || {}).prog && myTryouts().length > 1) return 'tryout';
   // the club's settings screens are Settings' Club section since build 143; the rest hang off Club home
-  if (['people', 'admin', 'scheduler', 'regs', 'comply'].includes(v)) return 'setup';
+  if (['people', 'admin', 'regs', 'comply'].includes(v)) return 'setup';
   // fields, fees and hours are Settings' screens (UX-REVIEW-2.md, 7.3); Sessions itself hangs off Club home
   if (v === 'sessions') return sessSetTab() ? 'setup' : null;
-  // the Sessions door's Home is a tab's own
-  if (v === 'shome') return null;
+  // each door's Home is a tab's own, and so are the Training door's plans and library and the Scheduler's board
+  if (v === 'shome' || v === 'schome' || v === 'scheduler' || v === 'practice') return null;
   if (v === 'tryout') return 'club';
   // How to: a topic goes back to the list first, the list up to Home like the rest of More's screens
   if (v === 'guide') return ui.howto ? 'guide' : doorHome();
@@ -8301,14 +8347,15 @@ function upView(v = ui.view) {
   // Club home is up from nowhere once it is the Home tab's own screen; otherwise up is Home
   if (v === 'club') return homeView() === 'club' ? null : homeView();
   // a team's own tabs, for staff with several teams: up is the list of them
-  if (['season', 'roster', 'practice'].includes(v) && homeView() === 'club') return 'club';
+  if (['season', 'roster'].includes(v) && homeView() === 'club') return 'club';
   return null;
 }
 // the arrow says where it goes, read out and on a long press: the screen upView() names
 function upLabelFor(up) {
   if (up === ui.view) return ui.view === 'regs' ? 'Back to the programs' : ui.view === 'guide' ? 'Back to How to' : 'Back to the tryouts';
   const name = up === 'setup' ? 'Settings' : up === 'club' ? 'Club home' : up === 'calendar' ? 'the calendar'
-    : up === 'inbox' ? 'Messages' : up === 'season' ? (homeView() === 'season' ? 'Home' : 'the team') : up === 'games' ? 'the games' : up === 'shome' ? 'Home' : VIEW_TITLE[up];
+    : up === 'inbox' ? 'Messages' : up === 'season' ? (homeView() === 'season' ? 'Home' : 'the team') : up === 'games' ? 'the games' : up === 'shome' || up === 'schome' ? 'Home'
+      : up === 'practice' ? (practiceUi().tab === 'plans' ? 'Home' : 'Drills') : VIEW_TITLE[up];
   return name ? 'Back to ' + name : 'Back';
 }
 // a game's back arrow says where it goes: the screen it was opened from
@@ -8340,7 +8387,7 @@ function titleBar() {
       : myTeams().length > 1
       ? `<button class="tbtitle pick" data-act="teammenu" aria-label="Switch team" title="Switch team"><span>${teamLabel(t)}</span>${CHEV_SVG}</button>`
       : plain(teamLabel(t));
-    main = name + clubBtn('tbsub');
+    main = name + clubBtn('tbsub', doorPrefix(v));
   } else if (v === 'club') {
     main = clubBtn('tbtitle pick') + plain('Club home', 'tbsub');
   } else if (scope === 'me') {
@@ -8350,13 +8397,18 @@ function titleBar() {
        says which calendar is open, as the admin's All teams always did. */
     main = plain(esc(screenTitle(v) || '')) + clubBtn('tbsub', v === 'calendar' ? (calSel() === 'club' ? 'All teams · ' : 'My calendar · ') : '');
   } else {
-    // the Sessions door says so where the Calendar says which calendar: on the club line, so a glance tells which app she is in
-    main = plain(esc(screenTitle(v) || (TEAM_VIEWS.includes(v) ? 'Home' : org))) + clubBtn('tbsub', curDoor() === 'sessions' && SESSION_VIEWS.includes(v) ? 'Sessions · ' : '');
+    // a door says so where the Calendar says which calendar: on the club line, so a glance tells which tool she is in
+    main = plain(esc(screenTitle(v) || (TEAM_VIEWS.includes(v) ? 'Home' : org))) + clubBtn('tbsub', doorPrefix(v));
   }
-  /* The switch to the other door (DOORS.md): at the end of the row, its icon
-     and its name, for whoever has both doors; nothing for whoever has one. */
-  const other = curDoor() === 'sessions' ? 'teams' : 'sessions';
-  const door = hasDoor('sessions') && hasDoor('teams') ? `<button class="tbdoor" data-act="door" data-d="${other}" aria-label="Switch to ${DOORS[other]}" title="Switch to ${DOORS[other]}">${DOOR_ICON[other]}<span>${DOORS[other]}</span></button>` : '';
+  /* The one switch (DOORS.md; TOOLS.md): at the end of the row, for whoever
+     has more than one door, and nowhere else in the app. With two doors it
+     is the other one, its icon and name, one tap. With more it names the
+     door she is in and opens the sheet of hers (sheetDoors). Nothing for
+     whoever has one door. */
+  const mine = myDoors(), cur = curDoor();
+  const other = mine.length === 2 ? mine.find(x => x !== cur) : null;
+  const door = other ? `<button class="tbdoor" data-act="door" data-d="${other}" aria-label="Switch to ${DOORS[other]}" title="Switch to ${DOORS[other]}">${DOOR_ICON[other]}<span>${DOORS[other]}</span></button>`
+    : mine.length > 2 ? `<button class="tbdoor pick" data-act="doors" aria-label="Switch to ${esc(wordsAnd(mine.filter(x => x !== cur).map(x => DOORS[x])))}" title="Switch to ${esc(wordsAnd(mine.filter(x => x !== cur).map(x => DOORS[x])))}">${DOOR_ICON[cur]}<span>${DOORS[cur]}</span>${CHEV_SVG}</button>` : '';
   return `${back}<div class="tbmain">${main}</div>${door}`;
 }
 function tabBar() {
@@ -8377,17 +8429,15 @@ function settingsLine() {
   // the same line in both doors and on the account sheet; Settings itself draws the club's rows for the door she is in
   return ['You', team() && restricted() !== 'tracker' && !readerRole(restricted()) ? 'this team' : '', canAdmin() ? 'the club: people, fields, teams and sessions' : coachAny ? 'people' : ''].filter(Boolean).join(', ');
 }
-/* The other door, as a row on More and a button on the title row: the door
-   she is not in, with its icon and name, for whoever has both (DOORS.md).
-   Nothing for whoever has one door alone, and the handler refuses a tap at a
-   door she does not have. */
+/* The switch sheet, from the title row's button, for whoever has three
+   doors or more: each of hers with its icon and one line, the one she is in
+   marked. The only list of the doors anywhere (TOOLS.md). */
 const SESS_MORE = { fields: 'The places the club trains, and the permits it holds', fees: 'Who has paid for a place, and who still owes', hours: 'What each coach ran this month' };
-function doorRow() {
-  if (!hasDoor('sessions') || !hasDoor('teams')) return '';
-  const to = curDoor() === 'sessions' ? 'teams' : 'sessions';
-  const sub = to === 'sessions' ? sessClubLine() : 'Your teams, games and practices';
-  return `<button class="opt door" data-act="door" data-d="${to}"><span class="dooric">${DOOR_ICON[to]}</span><span><b>${DOORS[to]}</b>
-      <span class="rowsub">${esc(sub)}</span></span></button>`;
+function sheetDoors() {
+  const cur = curDoor();
+  openSheet(`<h3>Switch to</h3>
+    ${myDoors().map(d => `<button class="opt door" data-act="door" data-d="${d}" aria-current="${d === cur}"><span class="dooric">${DOOR_ICON[d]}</span><span><b>${DOORS[d]}</b>
+      <span class="rowsub">${esc(DOOR_LINE[d])}</span></span>${d === cur ? '<span class="tag">Here</span>' : ''}</button>`).join('')}`);
 }
 function sheetMore() {
   const org = clubName();
@@ -8401,13 +8451,10 @@ function sheetMore() {
       <span class="rowsub">The club: its teams and sessions</span></button>` : ''}
     ${anyPlayers() && navKind() !== 'family' ? `<button class="opt" data-act="goview" data-v="mine"><b>My players</b>
       <span class="rowsub">${allKidNames().map(esc).join(', ')}</span></button>` : ''}
-    ${inSess || !(canAdmin() && myTeams().length) ? '' : `<button class="opt" data-act="schedule"><b>All teams</b>
-      <span class="rowsub">Every team's calendar: this week, what is still to settle, and the Planner</span></button>`}
-    ${inSess || !(canTrain() && (team() || myTeams().length)) ? '' : `<button class="opt" data-act="moredrills"><b>Drills</b>
-      <span class="rowsub">The library, the club's and your own: look one up, change it, write a new one</span></button>`}
+    ${curDoor() !== 'teams' || !(canAdmin() && myTeams().length) ? '' : `<button class="opt" data-act="schedule"><b>All teams</b>
+      <span class="rowsub">Every team's calendar: this week, and what is still to settle</span></button>`}
     ${inSess && canOffer() ? Object.entries(SESS_SET).map(([k, l]) => `<button class="opt" data-act="sesstab" data-k="${k}"><b>${l}</b>
       <span class="rowsub">${SESS_MORE[k]}</span></button>`).join('') : ''}
-    ${doorRow()}
     <button class="opt" data-act="howto"><b>How to use ${APP_NAME}</b>
       <span class="rowsub">Step by step, picked for what you do here</span></button>
     <button class="opt" data-act="goview" data-v="setup"><b>Settings</b>
@@ -8452,10 +8499,8 @@ function viewClub() {
     ${(doors => doors.length ? `<div class="setgrid clubdoors">${doors.join('')}</div>` : '')([
       canAdmin() && list.length ? setTile('schedule', 'sched', 'Calendar', `Every team · ${esc(schedLine())}`)
         : (me || !gated()) && myCalOwn() && !fam ? setTile('goview', 'sched', 'Calendar', esc(myCalLine()), ' data-v="mycal"') : '',
-      anyPlayers() && !fam ? setTile('goview', 'people', 'My players', allKidNames().map(esc).join(', '), ' data-v="mine"') : '',
-      canSessions() ? setTile('goview', 'drills', 'Sessions', esc(sessClubLine()), ' data-v="shome"') : ''
+      anyPlayers() && !fam ? setTile('goview', 'people', 'My players', allKidNames().map(esc).join(', '), ' data-v="mine"') : ''
     ].filter(Boolean))}
-    ${canAdmin() && list.length ? clubWeekCard(thisClubWeek()) : ''}
     ${list.length ? `<h2 class="sechead">Teams</h2>` : ''}
     ${complyCards()}
     ${myTryouts().length ? goCard('goview', ' data-v="tryout"', 'Tryouts to score', `${esc(myTryouts().map(p => p.name).join(', '))} · by bib`) : ''}
@@ -12243,30 +12288,10 @@ function calFab(ed, v) {
 }
 
 /* The club's week card (counts, shared fields, no pitch left, teams with no
-   practice, still to settle) sat under All teams until build 163. The owner:
-   that is the admin's bookkeeping and the Calendar is not where she should
-   find it. It is the Scheduler's strip now (schedStrip()), and since the
-   Home work landed beside it (main, 2026-10-16: admins open the app for the
-   club's schedule) the same card leads an admin's Club home for this week,
-   where its door is the Scheduler. */
-function clubWeekCard(s) {
-  const w = schedWeek(s), todo = schedTodo(w.tids), shown = todo.slice(0, 8);
-  const sum = [w.games && `${w.games} game${w.games === 1 ? '' : 's'}`, w.practices && `${w.practices} practice${w.practices === 1 ? '' : 's'}`,
-    w.events && `${w.events} other`, w.called && `${w.called} called off`].filter(Boolean).join(' \u00b7 ') || 'Nothing on';
-  return `<div class="card clubweek"><div class="spread"><h2>The club, ${esc(dayLabel(w.week).slice(4))} \u2013 ${esc(dayLabel(w.end).slice(4))}</h2></div>
-    <p style="margin:6px 0 0"><b>${esc(sum)}</b></p>
-    ${w.shared ? `<p class="muted" style="margin:6px 0 0">${w.shared} on a shared field: another team is on the same field at the same time. Fine for practices; each says who with.</p>` : ''}
-    ${w.clash ? `<p class="warn alert" style="margin:6px 0 0">${w.clash} ${w.clash === 1 ? 'entry has' : 'entries have'} no pitch left: a game, or something other than a practice, on a field already full then. The Scheduler shows where.</p>` : ''}
-    ${w.idle.length ? `<p class="muted" style="margin:6px 0 0">No practice this week: ${esc(w.idle.map(shortTeam).join(', '))}</p>` : ''}
-    ${todo.length ? `<p class="lbl" style="margin:12px 0 4px">Still to settle</p>
-      <p class="muted" style="margin:0 0 6px">Coming up with no date, time or place, which is what a family can't plan around.</p>
-      <div class="agevs">${shown.map(({ x, miss }) => `<button class="ev" type="button" data-act="calitem" data-k="${x.kind}" data-tid="${esc(x.tid)}" data-id="${esc(x.id)}" data-called="0" data-past="0" style="--ev:${teamHue(x.tid)}">
-        <span class="ev-top"><span class="ev-title">${evTeam(x.tid)}${esc(x.title)}</span><span class="ev-score">${x.date ? esc(shortDate(x.date)) : 'TBC'}</span></span><span class="ev-sub">No ${esc(miss.join(', no '))} yet</span></button>`).join('')}</div>
-      ${todo.length > shown.length ? `<p class="muted" style="margin:6px 0 0">And ${todo.length - shown.length} more.</p>` : ''}` : ''}
-    <div class="row wrap" style="margin-top:12px">
-      <button class="btn quiet sm" data-act="schedaddk" data-v="games" data-open="1">Schedule a run of games</button>
-      <button class="btn quiet sm" data-act="scheduler">Open the Scheduler</button></div></div>`;
-}
+   practice, still to settle) sat under All teams until build 163 and led
+   an admin's Club home until build 194. It is the Scheduler's strip
+   (schedStrip()), on the Scheduler's own Home (TOOLS.md): the core keeps
+   when, where and who, and nothing of the tools on it. */
 /* ---- the screen ---- */
 function viewCalendar() {
   const offer = calSels(), sel = calSel();
@@ -12974,7 +12999,7 @@ function viewTeamStats() {
     </div></div>`;
   return `<div class="stack">
     <h2>Stats</h2>
-    ${record}${shotsCard}${possCard}${evCard}${trends}${needsWorkCard(t)}
+    ${record}${shotsCard}${possCard}${evCard}${trends}
     ${restricted() ? '' : aiButton('team')}
   </div>`;
 }
@@ -13509,10 +13534,13 @@ function viewPractice() {
   if (!L || !D) return `<div class="empty"><strong>The drill library didn't load</strong>It comes with the app as a file of its own, and this page opened without it. Reload when you have a signal.</div>`;
   const p = practiceUi();
   if (p.run) { const r = runView(L); if (r) return r; }
-  const tabs = `<div class="chips">${[['plans', 'Plans'], ['drills', `Drills · ${drillPool(L, 'all').length}`], ['positions', 'Positions']].map(([k, l]) =>
+  /* The Training door (TOOLS.md, build 194): the plans are its Home and the
+     library its Drills tab, on the bar; Positions is a chip beside the
+     drills. No chips over the plans, which lead with the next practice. */
+  const chips = p.tab === 'plans' ? '' : `<div class="chips">${[['drills', `Drills · ${drillPool(L, 'all').length}`], ['positions', 'Positions']].map(([k, l]) =>
     `<button class="chip" type="button" data-act="practab" data-k="${k}" aria-pressed="${p.tab === k}">${l}</button>`).join('')}</div>`;
   const body = p.tab === 'positions' ? practicePositions(L) : p.tab === 'drills' ? pickBanner(L) + practiceDrillsView(L) : practicePlansView(L);
-  return `<div class="stack">${tabs}${body}</div>`;
+  return `<div class="stack">${chips}${body}</div>`;
 }
 
 /* The team's own shapes that the library has drills for, its defaults first:
@@ -15179,9 +15207,15 @@ function sheetPracAi(L, t, pr, keepAnswer) {
 }
 
 /* ---- the screens ---- */
+/* Training's Home on a team she plans for no plan of (a coach on another
+   team's screen; an admin plans for every team, as a coach of all of them):
+   whose the plans are, with the library still hers on Drills. */
+function trainingNoPlans(t) {
+  return `<div class="empty"><strong>Plans are for this team's coaches</strong>The drills and the positions guide are here for every coach; your own team\u2019s plans are under your team.</div>`;
+}
 function practicePlansView(L) {
   const t = team(); if (!t) return needTeam();
-  if (!canPlan(t.id)) return `<div class="empty"><strong>Plans are for this team's coaches</strong>The drills and the positions guide are here for every coach; your own team's plans are under your team.</div>`;
+  if (!canPlan(t.id)) return trainingNoPlans(t);
   watchTrain('practices', t.id);
   const p = practiceUi();
   if (p.open) { const pr = practiceById(t.id, p.open); if (pr) return planView(L, t, pr); p.open = null; }
@@ -15201,6 +15235,7 @@ function practicePlansView(L) {
     ${tplStrip(L, t)}
     ${next.length ? `<div class="plist">${next.map(x => x.cal ? calPracRow(x.cal) : pracRow(L, x, today)).join('')}</div>`
       : `<div class="empty"><strong>No practices coming up</strong>Add one, and it goes on the team's calendar; then the drills, the timings and the kit list are on your phone at the field, signal or not.</div>`}
+    ${needsWorkCard(t)}
     ${past.length ? `<p class="lbl" style="margin:6px 0 0">Earlier</p><div class="plist">${past.slice(0, p.past ? 60 : 5).map(x => pracRow(L, x, today)).join('')}</div>
       ${past.length > 5 && !p.past ? `<button class="btn quiet wide" data-act="pracpast">Show all ${past.length}</button>` : ''}` : ''}`;
 }
@@ -19126,7 +19161,8 @@ function viewSetup() {
       <span class="settxt"><b>${esc(me.name || me.email || 'You')}</b>${me.email ? `<span class="setsub">${esc(me.email)}</span>` : ''}<span class="setsub">${esc(roleLine)}</span>${code ? `<span class="setsub">${esc(clubName())}</span>` : ''}</span></button>`
     : `<button class="card go sethero" type="button" data-act="signinsheet"><span class="setavatar">?</span>
       <span class="settxt"><b>Sign in</b><span class="setsub">Signed out, everything stays on this device. Sign in to share it with your club.</span></span></button>`;
-  const you = `<section class="setgroup"><h2 class="sechead">You</h2>${hero}${canTrain() ? `<button class="card go setswitch quiet" type="button" data-act="mydrills"><span class="seticon">${SET_ICON.mydrills}</span>
+  // My drills is Training's (TOOLS.md): on its Settings alone, as the club's shelves are
+  const you = `<section class="setgroup"><h2 class="sechead">You</h2>${hero}${canTrain() && curDoor() === 'training' ? `<button class="card go setswitch quiet" type="button" data-act="mydrills"><span class="seticon">${SET_ICON.mydrills}</span>
       <span class="settxt"><b>My drills</b><span class="setsub">Your own drills and templates, on every phone you sign in on</span></span></button>` : ''}<button class="card go setswitch quiet" type="button" data-act="howto"><span class="seticon">${SET_ICON.howto}</span>
       <span class="settxt"><b>How to use ${APP_NAME}</b><span class="setsub">Step by step, picked for what you do here</span></span></button></section>`;
   // the switches, here and nowhere else (UX-REVIEW-2.md, 6.2); What's new has a gear to them
@@ -19134,26 +19170,29 @@ function viewSetup() {
 
   // the team on screen, for whoever could read its set-up on Squad before: never a tracker or a family
   const t = team(), lim = restricted();
-  // a team's set-up is the season's: not drawn while she is in Sessions
-  const teamRows = t && lim !== 'tracker' && !readerRole(lim) && curDoor() !== 'sessions' ? teamSetUp(t, !canEditTeam(t.id)) : [];
+  // a team's set-up is the season's: drawn in Teams alone
+  const teamRows = t && lim !== 'tracker' && !readerRole(lim) && curDoor() === 'teams' ? teamSetUp(t, !canEditTeam(t.id)) : [];
   const team_ = teamRows.length ? setGroup(`This team · ${teamLabel(t)}`, canEditTeam(t.id) ? 'How the team looks, plays and is tracked' : 'Read only: its coaches change it', teamRows) : '';
 
   /* The club's rows are the door's (the owner, 2026-10-25: Settings was
-     getting too thick to take in). Teams is the season: its teams, games,
-     the Scheduler and who coaches them. Sessions is the business: the 1-1s
-     and groups, what families owe, the coaches' hours and registration,
-     which a season does without (a coach adds her players and lets their
-     families in by email). Fields and permits are both doors', and People,
-     Club details and the bulk import the club's own; the other door's are
-     one tap away, at the foot, for whoever has both. */
-  const inSess = curDoor() === 'sessions';
+     getting too thick to take in; TOOLS.md, build 194). Teams is the season:
+     the club, its people, the fields, who is compliant, and the season's
+     import. Training is the club's shelves, an admin's to tidy. The
+     Scheduler is the fields it lays the week out on. Sessions is the
+     business: the 1-1s and groups, what families owe, the coaches' hours and
+     registration, which a season does without (a coach adds her players
+     and lets their families in by email). Fields and permits are the
+     club's, reached from every door that places things on them. No row
+     opens another door's settings: the switch up top is the one way
+     between doors (the owner, 2026-11-04). */
+  const dn = curDoor();
   const offer = canOffer() && (adm || coachAny || (!!me && coachesSessions(me.uid)));
   const fieldsTile = setTile('sesstab', 'fields', 'Fields and permits', fieldList().length ? `${fieldList().length} field${fieldList().length === 1 ? '' : 's'}, their permits and hours` : adm ? 'Where the club trains, and the permits for each' : 'Where the club trains', ' data-k="fields"');
   const shared = [
     adm ? setTile('goview', 'club', 'Club details', 'Name and badge, what parents see, teams, who owns it', ' data-v="admin"') : '',
     adm || coachAny ? setTile('goview', 'people', 'People', adm ? `${members().length} signed in · roles and invites` : 'Who is in the club, roles and invites', ' data-v="people"') : ''
   ];
-  const clubTiles = inSess ? [
+  const clubTiles = dn === 'sessions' ? [
     ...shared,
     adm ? setTile('goview', 'regs', 'Registrations', (k => k ? `${k} program${k === 1 ? '' : 's'}, their links, waivers and who has registered` : 'Programs families register for, with their links and waivers')(programsAll().length), ' data-v="regs"') : '',
     // the sessions' set-up, off the Sessions screen since build 148 (UX-REVIEW-2.md, 7.3): a coach reads fields, and her own fees and hours
@@ -19161,30 +19200,26 @@ function viewSetup() {
     offer ? setTile('sesstab', 'fees', 'Session fees', adm ? 'What each family owes for 1-1s and groups, and what is paid' : 'What families owe for your sessions, and what is paid', ' data-k="fees"') : '',
     offer ? setTile('sesstab', 'hours', 'Coach hours', adm ? 'Sessions run by each coach this month, and pay' : 'Sessions you ran this month, and pay', ' data-k="hours"') : '',
     adm ? setTile('bulkimport', 'import', 'Bulk import', 'Sessions, bookings and fields from a spreadsheet or file') : ''
+  ] : dn === 'training' ? [
+    adm ? setTile('clubdrills', 'drills', "Club drills", (k => k ? `${k} drill${k === 1 ? '' : 's'} the club's coaches have shared` : 'What coaches share with the club, to tidy or remove')(shelfItems('club').length)) : '',
+    adm ? setTile('tpllist', 'tpl', "Club templates", (k => k ? `${k} session template${k === 1 ? '' : 's'}` : 'Practice plans the club keeps to start from')(tplItems('clubTpl').length), ' data-k="clubTpl"') : ''
+  ] : dn === 'scheduler' ? [
+    adm || coachAny ? fieldsTile : ''
   ] : [
     ...shared,
-    adm ? setTile('scheduler', 'sched', 'Scheduler', 'The week laid out by field, every team\'s practices, find a time, picture day')
-      : coachAny ? setTile('scheduler', 'sched', 'Scheduler', 'Your teams\' practices on the club\'s fields, beside everyone else\'s') : '',
     adm || coachAny ? fieldsTile : '',
     adm ? setTile('goview', 'comply', 'Coach compliance', (x => x.length ? esc(x.map(([st, k]) => `${k} ${COMPLY_TALLY[st]}`).join(' · ')) : 'Everyone is up to date')(complyTally(complyRows())), ' data-v="comply"') : '',
-    adm ? setTile('clubdrills', 'drills', "Club drills", (k => k ? `${k} drill${k === 1 ? '' : 's'} the club's coaches have shared` : 'What coaches share with the club, to tidy or remove')(shelfItems('club').length)) : '',
-    adm ? setTile('tpllist', 'tpl', "Club templates", (k => k ? `${k} session template${k === 1 ? '' : 's'}` : 'Practice plans the club keeps to start from')(tplItems('clubTpl').length), ' data-k="clubTpl"') : '',
     adm ? setTile('bulkimport', 'import', 'Bulk import', 'Rosters, games, practices and fields from a spreadsheet or file') : ''
   ];
-  // the other door's settings, for whoever has both doors and something there to set: a wide card of its own, in the door's icon
-  const both = hasDoor('teams') && hasDoor('sessions');
-  const other = inSess ? 'teams' : 'sessions';
-  const otherHas = inSess ? adm || coachAny : offer;
-  const otherCard = code && both && otherHas
-    ? `<button class="card go setswitch" type="button" data-act="door" data-d="${other}" data-v="setup"><span class="seticon">${DOOR_ICON[other]}</span>
-      <span class="settxt"><b>${DOORS[other]} settings</b><span class="setsub">${inSess ? 'Teams, the Scheduler, compliance, the club\'s drills' : (adm ? 'Registrations, ' : '') + 'session fees, coach hours'}</span></span></button>` : '';
   const noClub = code ? [] : [
     Object.keys(myClubs || {}).length ? setTile('clubswitch', 'clubs', 'Your clubs', 'Open a club you are in') : '',
     canNewClub() ? setTile('newclub', 'plus', 'Start a new club', 'You become its admin') : '',
     setTileInfo('club', 'Not in a club on this phone yet', 'Open the invite link a club admin sent you, or start one.')
   ];
-  const clubSub = !code ? '' : !both ? '' : inSess ? 'The business: 1-1s and groups, registration, fees and hours' : 'The season: teams, games, practices and the fields they use';
-  const club = setGroup(code && both ? `Club · ${DOORS[inSess ? 'sessions' : 'teams']}` : 'Club', clubSub, [...clubTiles, ...noClub]) + otherCard;
+  // the section says whose rows these are once she has more than one door to stand in
+  const many = myDoors().length > 1;
+  const clubSub = !code || !many ? '' : { teams: 'The season: teams, games, practices and the fields they use', training: 'The drills and templates the club keeps for every coach', scheduler: 'The fields the club\'s week is laid out on', sessions: 'The business: 1-1s and groups, registration, fees and hours' }[dn];
+  const club = setGroup(code && many ? `Club · ${DOORS[dn]}` : 'Club', clubSub, [...clubTiles, ...noClub]);
 
   const crosses = adm ? readiness().filter(x => !x.ok).length : 0;
   // what nobody needs at a game, and only the people who use it see it
@@ -20972,6 +21007,44 @@ function schedPrint() {
   const done = () => { p.printing = false; render(); };
   if (typeof window === 'undefined' || typeof window.print !== 'function') { done(); return; }
   setTimeout(() => { try { window.print(); } finally { done(); } }, 60);
+}
+/* The Scheduler door's Home (TOOLS.md, build 194): what needs looking at
+   this week, the strip the club week card on Club home used to say, then
+   the term as the calendars have it and a row into each of the board's
+   chips. A coach gets her teams' practices this week as the board draws
+   them, and the board itself, read-only, where her word on her own weekly
+   slot is. Nothing here a role may not do: the handlers check canSched()
+   and canPlanClub() as the board's do. */
+function viewSchedHome() {
+  if (!canSched()) return viewScheduler();
+  const adm = canPlanClub();
+  const week = addDays(todayStr(), -weekdayOf(todayStr()));
+  const items = adm ? boardAll(week) : boardItems(week);
+  if (!adm) {
+    const mine = new Set(teams().filter(t => coachesOf(t.id).includes(me && me.uid)).map(t => t.id));
+    const ps = items.filter(x => x.kind === 'practice' && mine.has(x.tid) && !x.off).sort((a, b) => (a.date + pad2(Math.floor(a.a / 60)) + pad2(a.a % 60)).localeCompare(b.date + pad2(Math.floor(b.a / 60)) + pad2(b.a % 60)));
+    const word = x => !x.series ? '' : x.word ? (x.word.ok ? 'works for you' : 'you flagged it') : 'weekly \u00b7 your word not given yet';
+    return `<div class="stack"><div class="card"><h2 style="margin-bottom:0">Your teams this week</h2>
+      ${ps.length ? `<div class="plist">${ps.map(x => `<button class="prow go" type="button" data-act="schgo" data-k="board" style="grid-template-columns:1fr auto">
+        <span><span class="pname">${esc(x.label)}</span><span class="psub">${esc([dayLabel(x.date), timeOf(x), x.venue, word(x)].filter(Boolean).join(' \u00b7 '))}</span></span></button>`).join('')}</div>`
+        : '<p class="muted" style="margin:6px 0 0">No practice of yours on the board this week.</p>'}
+      <p class="muted" style="margin:8px 0 0">The board is the club\u2019s week laid out by field, your teams in colour. Tap your own weekly slot there to say whether it works for you.</p>
+      <div class="row wrap" style="margin-top:10px"><button class="btn sm" data-act="schgo" data-k="board">Open the board</button></div></div></div>`;
+  }
+  const sc = schedOrg();
+  const row = (k, name, sub) => `<button class="prow go" type="button" data-act="schgo" data-k="${k}" style="grid-template-columns:1fr auto"><span><span class="pname">${name}</span><span class="psub">${sub}</span></span></button>`;
+  return `<div class="stack">
+    ${schedStripCard(week, items)}
+    <div class="card"><h2 style="margin-bottom:6px">The term</h2>
+      <p class="muted" style="margin:0">${okDay(sc.from) && okDay(sc.until) ? `On the calendars: ${esc(dayLabel(sc.from))} to ${esc(dayLabel(sc.until))}.` : 'Nothing written for a term yet: lay the week out on the board, then put it on the calendars.'}</p></div>
+    <div class="card setcard"><div class="plist">
+      ${row('board', 'Board', 'The week laid out by field, every team\u2019s practices, placed by the rules')}
+      ${row('term', 'The term', 'The weeks across and the teams down, and what the write would change')}
+      ${row('rules', 'Rules', 'What must hold, what should, and what is only nice to have')}
+      ${row('find', 'Find a time', 'A free slot for a team, or several, with what each clashes with')}
+      ${row('coach', 'Coaches', 'Who is free when, their time off and call-outs')}
+      ${row('pic', 'Picture day', 'One entry per team, slot by slot')}
+    </div></div></div>`;
 }
 function viewScheduler() {
   if (!canSched()) return `<div class="empty"><strong>Coaches and club admins only</strong>The club's week laid out by field is for the people who run it.</div>`;
@@ -24746,7 +24819,7 @@ function onAct(e) {
      back to Season. */
   if (a === 'moredrills') {
     closeSheet();
-    if (!canTrain()) return;
+    if (!hasDoor('training')) return;
     if (!team()) { const t = myTeams()[0]; if (!t) return; ui.teamId = t.id; }
     const p = practiceUi();
     p.tab = 'drills'; p.pick = null; p.run = null;
@@ -25392,6 +25465,8 @@ function onAct(e) {
   if (a === 'goview') {
     // Sessions opened from More or Club home is the sessions, not the Settings screen a last visit left it on
     if (d.v === 'sessions' && ui.sess && SESS_SET[ui.sess.tab]) ui.sess.tab = 'list';
+    // Training opened by name is its Home, the plans, whatever the library was left on
+    if (d.v === 'practice') { const pu = practiceUi(); pu.tab = 'plans'; pu.pick = null; }
     ui.view = d.v; closeSheet(); render(); return;
   }
   /* The tab bar (UX-REVIEW.md, 1.1). A tab is a place: tapping the one she
@@ -25400,30 +25475,45 @@ function onAct(e) {
      several (UX-REVIEW-2.md, 6.3). Game is the list of her games
      (viewGames, UX-REVIEW-3.md, 11.1), or the game itself when exactly one
      of hers is being played and she is not already on it. */
-  /* The switch between the two doors (DOORS.md): to that door's Home, and
+  /* The switch between doors (DOORS.md; TOOLS.md): to that door's Home, and
      remembered. Refused for a door she does not have, whatever the button
-     said. */
+     said. The sheet of her doors, for whoever has three or more. */
+  if (a === 'doors') { if (myDoors().length > 1) sheetDoors(); return; }
   if (a === 'door') {
     const to = DOORS[d.d] ? d.d : 'teams';
-    if (!hasDoor(to)) { closeSheet(); toast('Sessions are for coaches, admins and families'); render(); return; }
-    // from Settings, to the other door's settings: the same screen, the other door's rows
-    const stay = d.v === 'setup' && ui.view === 'setup';
-    ui.door = to; ui.view = stay ? 'setup' : to === 'sessions' ? 'shome' : homeView(); ui.thread = null;
+    if (!hasDoor(to)) { closeSheet(); toast(DOOR_REFUSED[to]); render(); return; }
+    ui.door = to; openDoorHome(to); ui.thread = null;
     closeSheet(); render(); toTop(); return;
+  }
+  // the Scheduler's Home into the board, on one of its chips (the board for a coach, who reads it alone)
+  if (a === 'schgo') {
+    if (!canSched()) { toast(DOOR_REFUSED.scheduler); return; }
+    plannerUi().tab = canPlanClub() && ['board', 'term', 'rules', 'find', 'coach', 'pic'].includes(d.k) ? d.k : 'board';
+    ui.view = 'scheduler'; closeSheet(); render(); toTop(); return;
   }
   if (a === 'tab') {
     closeSheet();
     const k = d.tab || d.v;
+    // a How to step's Open Home names its door (Teams), so it is the team's Home whichever door she stood in
+    if (d.door && DOORS[d.door] && hasDoor(d.door)) ui.door = d.door;
     if (k === 'more') { sheetMore(); return; }
     if (k === 'calendar') { ui.view = 'calendar'; }
     else if (k === 'messages') { ui.view = 'inbox'; ui.thread = null; }
     else if (k === 'home') {
-      if (curDoor() === 'sessions') ui.view = 'shome';
+      if (curDoor() !== 'teams') openDoorHome();
       else if (homeView() === 'club') ui.view = 'club';
       else if (tabFor() !== 'home' || ui.view === 'game') ui.view = 'season';
     }
     // the Sessions door's third tab: the list of sessions, a tap on it from one of Settings' screens too
-    else if (k === 'sessions') { if (!canSessions()) { toast('Sessions are for coaches, admins and families'); return; } ui.view = 'sessions'; sessUi().tab = SESS_TABS[sessUi().tab] ? sessUi().tab : 'list'; }
+    else if (k === 'sessions') { if (!canSessions()) { toast(DOOR_REFUSED.sessions); return; } ui.view = 'sessions'; sessUi().tab = SESS_TABS[sessUi().tab] ? sessUi().tab : 'list'; }
+    // the Training door's third tab: the library (and the positions guide, a chip on it), for the team on screen
+    else if (k === 'drills') {
+      if (!hasDoor('training')) { toast(DOOR_REFUSED.training); return; }
+      if (!team()) { const t = myTeams()[0]; if (t) ui.teamId = t.id; }
+      const p = practiceUi(); ui.view = 'practice'; if (p.tab !== 'positions') p.tab = 'drills'; p.open = null;
+    }
+    // the Scheduler door's third tab: the board
+    else if (k === 'scheduler') { if (!canSched()) { toast(DOOR_REFUSED.scheduler); return; } ui.view = 'scheduler'; }
     else if (k === 'game') {
       const live = navGames().filter(g => gameStatus(g) === 'live');
       if (live.length === 1 && !(ui.view === 'game' && ui.matchId === live[0].id)) openNavGame(live[0]);
@@ -27278,7 +27368,8 @@ function uiToHash() {
      the back button bring back the same ones. */
   if (ui.view === 'calendar') return calSel() === 'club' && calSels().includes('mine') ? '#/calendar/all' : '#/calendar';
   if (['practice', 'roster', 'season', ...SEASON_VIEWS].includes(ui.view) && t) {
-    const seg = { practice: 'practice', roster: 'squad', season: 'season', teamstats: 'stats', minutes: 'minutes', attend: 'attendance' }[ui.view];
+    // Training's two screens: the plans (its Home) and the library
+    const seg = { practice: practiceUi().tab === 'plans' ? 'practice' : 'drills', roster: 'squad', season: 'season', teamstats: 'stats', minutes: 'minutes', attend: 'attendance' }[ui.view];
     return `#/team/${t}/${seg}`;
   }
   if (ui.view === 'games') return '#/games';
@@ -27297,8 +27388,9 @@ function uiToHash() {
   if (ui.view === 'setup') return '#/settings';
   if (ui.view === 'guide') return '#/how-to' + (ui.howto ? '/' + ui.howto : '');
   if (ui.view === 'sessions') { const tb = (ui.sess || {}).tab; return '#/training' + (tb && tb !== 'list' && (SESS_TABS[tb] || SESS_SET[tb]) ? '/' + tb : ''); }
-  // the Sessions door's Home (DOORS.md); #/training stays the list
+  // the Sessions door's Home (DOORS.md); #/training stays the list. The Scheduler's Home; #/club/scheduler stays the board
   if (ui.view === 'shome') return '#/sessions';
+  if (ui.view === 'schome') return '#/scheduler';
   return '#/';
 }
 
@@ -27338,6 +27430,7 @@ function hashToUi() {
   /* #/training/fields is a tab; #/training/{id} is one session, from a calendar
      file or a message, opened once the screen has drawn. */
   if (p[0] === 'sessions') { ui.view = 'shome'; return true; }
+  if (p[0] === 'scheduler') { ui.view = 'schome'; return true; }
   if (p[0] === 'training') {
     ui.view = 'sessions';
     const u = sessUi();
@@ -27360,8 +27453,10 @@ function hashToUi() {
        and calendar files link here); its games were a tab of their own, and
        are its Season now, and its settings ("planning") are on Squad. */
     if (p[2] === 'calendar') { calShowTeam(p[1]); return true; }
-    const back = { games: 'season', practice: 'practice', squad: 'roster', season: 'season', planning: 'roster', stats: 'teamstats', minutes: 'minutes', attendance: 'attend' }[p[2]];
+    const back = { games: 'season', practice: 'practice', drills: 'practice', squad: 'roster', season: 'season', planning: 'roster', stats: 'teamstats', minutes: 'minutes', attendance: 'attend' }[p[2]];
     ui.view = back || 'season';
+    // Training's two screens by address: the plans, or the library
+    if (p[2] === 'practice' || p[2] === 'drills') practiceUi().tab = p[2] === 'drills' ? 'drills' : 'plans';
     return true;
   }
   return false;

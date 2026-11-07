@@ -168,7 +168,7 @@ console.log('\n--- the labels, as GLOSSARY.md names them ---');
   const idx = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const src0 = fs.readFileSync(H.APP_PATH, 'utf8');
   const tab = v => (idx.match(new RegExp(`data-view="${v}"[^>]*>([^<]+)<`)) || [])[1];
-  check('a team\'s tabs are Season · Players · Training', [tab('season'), tab('roster'), tab('practice')].join(' · '), 'Season · Players · Training');
+  check('a team\'s tabs are Season · Players (Training is a door since build 194)', [tab('season'), tab('roster')].join(' · '), 'Season · Players');
   const gtab = v => (idx.match(new RegExp(`data-gview="${v}"[^>]*>([^<]+)<`)) || [])[1];
   check('a game\'s screens are Subs · Track · Lineup · Stats · Live, in that order, never Plan', [...idx.matchAll(/data-gview="(\w+)"[^>]*>([^<]+)</g)].map(m => m[2]).join(' · '), 'Subs · Track · Lineup · Stats · Live · Recap');
   as('jaz');
@@ -178,7 +178,11 @@ console.log('\n--- the labels, as GLOSSARY.md names them ---');
   // the Sessions door's bar (DOORS.md): the same for everyone standing in it
   as('jaz', 'sessions');
   check('— in the Sessions door, Home · Calendar · Sessions · Messages · More', A.navTabs().map(t => t.label).join(' · '), 'Home · Calendar · Sessions · Messages · More');
-  check('— and the two doors are Teams and Sessions', Object.values(A.DOORS).join(' · '), 'Teams · Sessions');
+  check('— and the four doors are Teams, Training, Scheduler and Sessions (TOOLS.md, build 194)', Object.values(A.DOORS).join(' · '), 'Teams · Training · Scheduler · Sessions');
+  as('jaz', 'practice');
+  check('— in Training, Home · Calendar · Drills · Messages · More', A.navTabs().map(t => t.label).join(' · '), 'Home · Calendar · Drills · Messages · More');
+  as('boss', 'schome');
+  check('— in the Scheduler, Home · Calendar · Scheduler · Messages · More', A.navTabs().map(t => t.label).join(' · '), 'Home · Calendar · Scheduler · Messages · More');
   check('— Live feed is gone: the play-by-play is Live for everyone', /'Live feed'|>Live feed</.test(src0), false);
   check('who runs the club is a Club admin', A.ROLE_LABEL.admin, 'Club admin');
   check('a 1-1 on the calendar is a Session', A.CAL_KIND.session, 'Session');
@@ -186,7 +190,8 @@ console.log('\n--- the labels, as GLOSSARY.md names them ---');
   // UX-REVIEW-2.md, 6.2 (build 148): the page is What's new, Notifications the switches
   check('what changed is What\'s new, never Notifications', A.VIEW_TITLE.notes, "What's new");
   as('boss', 'club');
-  check('— on Club home and under More', /<b>Sessions<\/b>/.test(A.rendered()) && (A.sheetMore(), /<b>Sessions<\/b>/.test(sheet())), true);
+  check('— on the switch, and nowhere else on Club home or More (TOOLS.md)', !/<b>Sessions<\/b>/.test(A.rendered()) && (A.sheetMore(), !/<b>Sessions<\/b>/.test(sheet())) && (A.closeSheet(), A.sheetDoors(), /<b>Sessions<\/b>/.test(sheet())), true);
+  A.closeSheet();
   // the sync badge's words come from one function; every label it is given is one of the glossary's four
   const src = fs.readFileSync(H.APP_PATH, 'utf8');
   const labels = src.split('\n').filter(l => /setSync\(/.test(l) && !/^function setSync/.test(l)).flatMap(l => [...l.matchAll(/'([^']*)'/g)].map(m => m[1])).filter(x => x !== 'off' && x !== 'live');

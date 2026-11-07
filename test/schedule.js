@@ -91,10 +91,11 @@ const fill = vals => { for (const [k, v] of Object.entries(vals)) A.dom.node('#'
     check('an admin has the Calendar first on Club home', /data-act="schedule"[^>]*>\s*(<span class="tc-main">|<span class="seticon">[\s\S]*?<\/span><span class="settxt">)?<b>Calendar<\/b>/.test(A.rendered()), true);
     check('saying what is on this week', /Every team · This week: /.test(A.rendered()), true);
     check('and is not offered an empty My calendar ahead of it', /data-v="mycal"/.test(A.rendered()), false);
-    // her Home leads with the club's week (the owner, 2026-10-15), this week whatever the calendar was left on
-    check('Club home carries the club\'s week under it', /data-act="schedule"[\s\S]*?class="card clubweek"/.test(A.rendered()), true);
-    A.ui.calDay = '2027-03-01'; A.render();
-    check('— this week, whatever week the calendar was left on', /class="card clubweek"><div class="spread"><h2>The club, ([^<]*)</.exec(A.rendered())[1], (d => { const s = A.addDays(d, -A.weekdayOf(d)); return A.dayLabel(s).slice(4) + ' – ' + A.dayLabel(A.addDays(s, 6)).slice(4); })(A.todayStr()));
+    // the club's week led her Home from build 164 (the owner, 2026-10-15) until the Scheduler became a door of its own (build 194, TOOLS.md): its Home has it now
+    check('Club home carries no club week card: it is the Scheduler\'s Home\'s', /clubweek|What needs looking at/.test(A.rendered()), false);
+    A.ui.calDay = '2027-03-01'; A.ui.view = 'schome'; A.render();
+    check('— which says what needs looking at this week, whatever week the calendar was left on', /What needs looking at/.test(A.rendered()) && /B9 Comets: 0 of 1 practice this week/.test(A.rendered()), true);
+    A.ui.view = 'club'; A.render();
     A.click({ act: 'tab', tab: 'more' });
     check('More has All teams for her (the owner, 2026-10-15)', /data-act="schedule"><b>All teams<\/b>/.test(sheet(A)), true);
     A.click({ act: 'schedule' });

@@ -663,7 +663,7 @@ console.log('--- the games are on the calendar, and on the team\'s Season ---');
   setup(); lockDown();
   const page = require('fs').readFileSync(require('path').join(__dirname, '..', 'index.html'), 'utf8');
   const tabs = page.match(/<nav class="tabs" id="tabs">[\s\S]*?<\/nav>/)[0].match(/data-view="[a-z]+"/g).join(' ');
-  check('three tabs for a team, and the Calendar not one of them', tabs, 'data-view="season" data-view="roster" data-view="practice"');
+  check('two tabs for a team, and the Calendar not one of them (Training is a door since build 194)', tabs, 'data-view="season" data-view="roster"');
   A.me = { uid: 'coachU', name: 'Jaz' };
   const g2 = A.state.matches.g2;
   g2.periods = { 0: { half: 1, start: H.clock.t - 5 * MIN } };

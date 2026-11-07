@@ -607,6 +607,10 @@ body[data-role="viewer"] .scoreside .btn{display:none}
 .tbdoor{flex:none;display:flex;align-items:center;gap:6px;min-height:40px;padding:0 10px;border-radius:999px;
   background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);color:#fff;font-size:14px;font-weight:600}
 .tbdoor svg{width:20px;height:20px}
+/* with three doors or more the button names the door she is in and opens the sheet of hers (TOOLS.md): a chevron says so */
+.tbdoor.pick svg:last-child{width:14px;height:14px;opacity:.8}
+.sheet .opt.door[aria-current="true"]{border-color:var(--field);background:var(--field-wash)}
+.sheet .opt.door .tag{margin-left:auto}
 
 /* ---------- game mode ---------- */
 /* A game is its own mode (UX-REVIEW.md, 1.3; build 144): the brand row steps

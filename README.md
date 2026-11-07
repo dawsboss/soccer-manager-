@@ -611,6 +611,12 @@ After any change to `ics.js`, run `node functions/make.js` to copy it into `func
 
 Nothing about the calendar needed a rule change: entries live under `teams/{tid}/events/{eid}`, below the rule that already lets a team's coaches and the club's admins change the team, and nobody else. `node test/rules.js` pins that.
 
+## Four doors: Teams, Training, the Scheduler and Sessions
+
+The app is four parts under one roof (`DOORS.md`, build 179; `TOOLS.md`, build 194), each with a Home and a bottom bar of its own, the same for everyone standing in it. **Teams** is the point of the site: the season's games and practices, when, where, how long, who is coming and who came, with the games themselves. **Training** is the drills and the practice plans (its Home the team's practices with a plan or a way to plan one, and *what needs work* read off the last games; Drills the library). **The Scheduler** is the club's week laid out on its fields (its Home what needs looking at this week and the term; the board its tab). **Sessions** is the business: 1-1s, groups, booking, fees and hours. The Calendar, Messages, the account and the children are the same in all four. Who has a door is who has its thing at all: a family has Teams and Sessions, a tracker Teams alone, a coach all four (the Scheduler read-only), an assistant coach Teams and Training, an admin all four.
+
+There is one way between them: the button at the end of the title row. For whoever has two doors it is the other one, one tap; for whoever has more it names the door she is in and opens a short sheet of hers. Nothing else in the app switches door (the owner, 2026-11-04): a link into a tool, such as *Plan* on a practice, opens that one thing there and Back brings her straight back.
+
 ## Sessions
 
 1-1s and small groups that belong to no team: a coach offers a slot, books players from any team or leaves it open for families to ask, brings the drills (or plans around what the family said she wants to work on), takes the register, and marks who has paid. **Club → Training sessions.** The design, and why it is shaped the way it is, is [`SESSIONS.md`](SESSIONS.md).

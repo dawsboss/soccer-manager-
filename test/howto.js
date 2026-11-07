@@ -74,9 +74,9 @@ const ids = () => A.howtoTopics().map(t => t.id).join(' ');
 console.log('--- which topics each kind of account gets ---');
 {
   as('boss');
-  check('an admin: everything but a family\'s answer', ids(), 'around home follow calendar messages notify homescreen offline team families lineup sideline after practice register club sessions');
+  check('an admin: everything but a family\'s answer', ids(), 'around home follow calendar messages notify homescreen offline team families lineup sideline after practice register club scheduler sessions');
   as('jaz');
-  check('a coach: her team, the families, the lineup, the sideline, practices and the register; never the club', ids(), 'around home follow calendar messages notify homescreen offline team families lineup sideline after practice register sessions');
+  check('a coach: her team, the families, the lineup, the sideline, practices, the register and the Scheduler (read-only); never the club', ids(), 'around home follow calendar messages notify homescreen offline team families lineup sideline after practice register scheduler sessions');
   as('trk');
   check('a tracker: the sideline and after, never the lineup, the team or the club', ids(), 'around home follow calendar messages notify homescreen offline sideline after');
   as('hal');

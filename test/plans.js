@@ -533,8 +533,11 @@ function plan(extra = {}, X = A) {
 
     with_([game(), game()]);
     check('two games are too few to say anything', A.needsWork(A.state.teams.t1).sigs.length, 0);
+    // the card is Training's Home since build 194 (TOOLS.md), with the plans it feeds; Stats keeps the numbers
+    A.ui.view = 'practice'; A.ui.practice = { tab: 'plans' }; A.render();
+    check('and the card says so, on Training\'s Home', /After 3 finished games/.test(A.rendered()), true);
     A.ui.view = 'teamstats'; A.render();
-    check('and the card says so', /After 3 finished games/.test(A.rendered()), true);
+    check('— and not on Stats', /What needs work/.test(A.rendered()), false);
 
     // losing heavily, conceding late, one scorer; no shots tapped at all
     const late = [['them', 2400], ['them', 2600], ['them', 300], ['us', 100, 'p3']];
@@ -546,7 +549,7 @@ function plan(extra = {}, X = A) {
     check('no shots tapped is not "we never shoot"', s1.includes('few-shots') || s1.includes('shots-against'), false);
     check('it is said to be unknown instead', A.needsWork(A.state.teams.t1).unknown.includes('shots'), true);
     check('no assists ever tapped is not "we never pass"', s1.includes('solo-goals'), false);
-    A.ui.view = 'teamstats'; A.render();
+    A.ui.view = 'practice'; A.ui.practice = { tab: 'plans' }; A.render();
     const html = A.rendered();
     check('the card shows the numbers behind each', /12 against and 6 for in the last 5 games/.test(html), true);
     check('and drills that answer it, for the team\'s age', /data-act="drill" data-id="/.test(html), true);
@@ -570,8 +573,8 @@ function plan(extra = {}, X = A) {
     check('All → opens the library on that signal', [A.ui.view, A.ui.practice.tab, A.ui.practice.f.sig].join(' '), 'practice drills few-shots');
 
     for (const who of ['mum', 'trk']) {
-      const ms = A.state.matches; as(who); A.state.matches = ms; A.ui.view = 'teamstats'; A.render();
-      check(who + ': no What needs work card', /What needs work/.test(A.rendered()), false);
+      const ms = A.state.matches; as(who); A.state.matches = ms; A.ui.view = 'practice'; A.render();
+      check(who + ': no What needs work card, nor the door it is on', /What needs work/.test(A.rendered()) + ' ' + A.ui.view, 'false season');
     }
   }
 

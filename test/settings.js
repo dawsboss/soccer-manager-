@@ -80,9 +80,15 @@ console.log('--- the sections, by whose they are ---');
   check('— titled Settings', A.rendered('#titlebar').includes('<span>Settings</span>'), true);
   let a = acts(h);
   // the Teams door's club rows (the owner, 2026-10-25); the Sessions door's are pinned in test/doors.js
-  for (const x of ['signinsheet', 'goview:admin', 'goview:people', 'goview:comply', 'scheduler', 'sesstab:fields', 'clubdrills', 'tpllist:clubTpl', 'bulkimport', 'backupsheet', 'readysheet', 'aboutsheet', 'editteam:t1', 'formations', 'trackcfg', 'sharesheet'])
+  for (const x of ['signinsheet', 'goview:admin', 'goview:people', 'goview:comply', 'sesstab:fields', 'bulkimport', 'backupsheet', 'readysheet', 'aboutsheet', 'editteam:t1', 'formations', 'trackcfg', 'sharesheet'])
     check(`— ${x}`, a.has(x), true);
   check('— no registrations, session fees or coach hours in Teams', ['goview:regs', 'sesstab:fees', 'sesstab:hours'].some(x => a.has(x)), false);
+  // the Scheduler and the club's shelves are doors' of their own since build 194 (TOOLS.md): no tile here, and no row to another door's settings
+  check('— no Scheduler, club drills or templates in Teams, and no row to another door\'s settings', ['scheduler', 'clubdrills', 'tpllist:clubTpl', 'door:sessions', 'door:training', 'door:scheduler'].some(x => a.has(x)), false);
+  A.ui.door = 'training'; A.render(); a = acts(A.rendered());
+  check('— in Training: the club\'s drills and templates, and nothing of the season or the business', a.has('clubdrills') && a.has('tpllist:clubTpl') && !['goview:admin', 'goview:people', 'scheduler', 'goview:comply', 'bulkimport', 'goview:regs', 'sesstab:fees', 'editteam:t1'].some(x => a.has(x)), true);
+  A.ui.door = 'scheduler'; A.render(); a = acts(A.rendered());
+  check('— in the Scheduler: Fields and permits, alone', [...a].filter(x => /^(goview|sesstab|scheduler|clubdrills|tpllist|bulkimport|editteam)/.test(x)).join(), 'sesstab:fields');
   A.ui.door = 'sessions'; A.render(); a = acts(A.rendered());
   for (const x of ['goview:regs', 'sesstab:fields', 'sesstab:fees', 'sesstab:hours', 'goview:people', 'backupsheet', 'aboutsheet'])
     check(`— in Sessions: ${x}`, a.has(x), true);
@@ -93,10 +99,13 @@ console.log('--- the sections, by whose they are ---');
 
   h = as('jaz');
   check('a coach: You, This team, Club (People), About', heads(h), 'You · This team · Club · About');
-  check('— People, the Scheduler (read-only, her teams lit; build 163) and nothing else of the club\'s', [...acts(h)].filter(x => /^goview:(admin|people|regs|comply)$|^scheduler$|^bulkimport$|^clubdrills$/.test(x)).sort().join(), 'goview:people,scheduler');
+  check('— People and nothing else of the club\'s (the Scheduler is a door since build 194)', [...acts(h)].filter(x => /^goview:(admin|people|regs|comply)$|^scheduler$|^bulkimport$|^clubdrills$/.test(x)).sort().join(), 'goview:people');
   check('— her team\'s set-up, to change', ['editteam:t1', 'formations', 'trackcfg'].every(x => acts(h).has(x)), true);
   check('— no backup or readiness', /backupsheet|readysheet/.test(h), false);
-  check('— My drills, since she plans', acts(h).has('mydrills'), true);
+  check('— no My drills in Teams: it is Training\'s (build 194)', acts(h).has('mydrills'), false);
+  A.ui.door = 'training'; A.render();
+  check('— My drills on Training\'s Settings, since she plans; no club section for her', acts(A.rendered()).has('mydrills') + ' ' + /Club ·/.test(A.rendered()), 'true false');
+  A.ui.door = 'teams'; A.render();
   check('— fields in Teams, for the Scheduler', acts(h).has('sesstab:fields') && !acts(h).has('sesstab:fees'), true);
   A.ui.door = 'sessions'; A.render();
   check('— fields, her sessions\' fees and her hours in Sessions (UX-REVIEW-2.md, 7.3)', ['sesstab:fields', 'sesstab:fees', 'sesstab:hours'].every(x => acts(A.rendered()).has(x)), true);
@@ -175,7 +184,7 @@ console.log('\n--- nothing twice ---');
 
 console.log('\n--- the way back ---');
 {
-  for (const v of ['people', 'admin', 'regs', 'comply', 'scheduler']) {
+  for (const v of ['people', 'admin', 'regs', 'comply']) {
     as('boss', v); A.click({ act: 'navback' });
     check(`${v}: back to Settings`, A.ui.view, 'setup');
     // one way up: the arrow, never a second Back of the screen's own going somewhere else

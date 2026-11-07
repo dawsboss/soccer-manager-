@@ -105,7 +105,7 @@ function newSession(v = {}) {
     as('trk'); A.ui.view = 'club'; A.render();
     check('no card for it on the club page', /<b>Sessions<\/b>/.test(A.rendered()), false);
     as('mum'); A.ui.view = 'club'; A.render();
-    check('a family has the card', /<b>Sessions<\/b>/.test(A.rendered()), true);
+    check('a family has the door on the switch, not a card on Club home (TOOLS.md, build 194)', !/<b>Sessions<\/b>/.test(A.rendered()) && /data-act="door" data-d="sessions"/.test(A.rendered('#titlebar')), true);
     as('jaz'); A.render();
     // fields, fees and hours are Settings' screens since build 148 (UX-REVIEW-2.md, 7.3): two chips here
     check('a coach has two chips, Sessions and Bookable times', ['Sessions', 'Bookable times'].every(t => A.rendered().includes(`>${t}</button>`)) && !['Fields', 'Fees', 'Hours'].some(t => A.rendered().includes(`>${t}</button>`)), true);

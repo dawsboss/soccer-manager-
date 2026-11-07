@@ -63,7 +63,7 @@ function as(uid, c = club()) {
       check(who + ': and nothing is written', JSON.stringify(A.state), before);
     }
     as('boss'); A.ui.view = 'setup'; A.render();
-    check('an admin has it on Settings, in the Club section, as the Scheduler (build 163)', /data-act="scheduler"/.test(A.rendered()), true);
+    check('an admin has it as a door of its own, on the switch, and no tile on Settings (TOOLS.md, build 194)', A.hasDoor('scheduler') + ' ' + /data-act="scheduler"/.test(A.rendered()), 'true false');
     A.click({ act: 'scheduler' });
     check('and it opens', A.ui.view, 'scheduler');
     check('at its own address', A.uiToHash(), '#/club/scheduler');

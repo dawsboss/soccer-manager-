@@ -217,7 +217,7 @@ console.log('\n--- the tabs are places ---');
   A.ui.view = 'roster'; A.render();
   A.click({ act: 'tab', tab: 'home' });
   check('— and Home from inside a team goes back up to the list', A.ui.view, 'club');
-  check('— which is up from Season, Players and Training', ['season', 'roster', 'practice'].map(v => A.upView(v)).join(' '), 'club club club');
+  check('— which is up from Season and Players (Training is a door of its own since build 194)', ['season', 'roster'].map(v => A.upView(v)).join(' '), 'club club');
   check('— and from nowhere itself', A.upView('club'), null);
   as('vee', 'season');
   A.click({ act: 'tab', tab: 'home' });
@@ -405,8 +405,10 @@ console.log('\n--- the title row ---');
   check('— titled Settings, over the club', titled('Settings') && /data-act="clubswitch"/.test(title()), true);
   A.click({ act: 'navback' });
   check('— and back from there is the team', A.ui.view, 'season');
-  for (const v of ['admin', 'scheduler', 'regs', 'comply']) { as('boss', v); A.click({ act: 'navback' }); check(`${v}: back is Settings`, A.ui.view, 'setup'); }
+  for (const v of ['admin', 'regs', 'comply']) { as('boss', v); A.click({ act: 'navback' }); check(`${v}: back is Settings`, A.ui.view, 'setup'); }
   as('boss', 'sessions'); check('sessions: a tab\'s own screen in the Sessions door, no back (DOORS.md)', A.upView() + ' ' + /tbback/.test(title()), 'null false');
+  as('boss', 'scheduler'); check('scheduler: a tab\'s own screen in the Scheduler door, no back (TOOLS.md)', A.upView() + ' ' + /tbback/.test(title()), 'null false');
+  as('jaz', 'practice'); check('practice: a tab\'s own screen in the Training door, no back (TOOLS.md)', A.upView() + ' ' + /tbback/.test(title()), 'null false');
   // fields, fees and hours are Settings' screens since build 148 (UX-REVIEW-2.md, 7.3)
   for (const [k, name] of [['fields', 'Fields'], ['fees', 'Session fees'], ['hours', 'Coach hours']]) {
     as('boss', 'setup'); A.click({ act: 'sesstab', k });
@@ -446,8 +448,9 @@ console.log('\n--- More, by role ---');
 {
   const has = (re, s) => re.test(s);
   as('boss'); let m = more();
-  check('an admin: What\'s new, Training sessions, Settings, Sign out',
-    ['data-v="notes"', 'data-act="door" data-d="sessions"', 'data-v="setup"', 'data-act="signout"'].every(x => m.includes(x)), true);
+  check('an admin: What\'s new, Settings, Sign out',
+    ['data-v="notes"', 'data-v="setup"', 'data-act="signout"'].every(x => m.includes(x)), true);
+  check('— and no row to another door: the switch is the title row\'s alone (TOOLS.md; the owner, 2026-11-04)', /data-act="doors?"/.test(m), false);
   check('— and not Club home, which is her Team tab', has(/data-v="club"/, m), false);
   check('— one Settings, never People or Club details beside it (build 143)', /data-v="people"|data-v="admin"/.test(m) + ' ' + (m.match(/data-v="setup"/g) || []).length, 'false 1');
   check('— which says it has the club in it', /<b>Settings<\/b>[\s\S]*?the club: people, fields, teams and sessions/.test(m), true);
@@ -460,18 +463,18 @@ console.log('\n--- More, by role ---');
   check('— the club, settings and sign out', ['data-v="club"', 'data-v="setup"', 'data-act="signout"'].every(x => m.includes(x)), true);
   as('mum', 'mine'); m = more();
   check('a parent: no People, no Club settings', /data-v="people"|data-v="admin"/.test(m), false);
-  check('— the club, the Sessions door, settings, sign out', ['data-v="club"', 'data-act="door" data-d="sessions"', 'data-v="setup"', 'data-act="signout"'].every(x => m.includes(x)), true);
+  check('— the club, settings, sign out, and no door row', ['data-v="club"', 'data-v="setup"', 'data-act="signout"'].every(x => m.includes(x)) && !/data-act="door"/.test(m), true);
   // anyone may start a club, a family included (the owner, 2026-10-14, overruling UX-REVIEW-2.md, 9.4)
   check('— and Clubs, to start one, in her one club', /<b>Clubs<\/b>[\s\S]*?Start a new club/.test(m), true);
   A.click({ act: 'clubswitch' });
   check('— and Start a new club in the switcher', /data-act="newclub"/.test(sheet()), true);
   A.closeSheet();
-  // Drills straight from More (the owner, 2026-10-15), for whoever has the Training tab
+  // Drills was a row on More from build 163 (the owner, 2026-10-15) until the Training door took it as its tab (build 194, TOOLS.md)
   as('jaz'); m = more();
-  check('a coach: Drills in More', m.includes('data-act="moredrills"'), true);
+  check('a coach: no Drills on More: it is Training\'s tab', m.includes('data-act="moredrills"'), false);
   A.ui.practice = { tab: 'plans' };
   A.click({ act: 'moredrills' });
-  check('— which opens the Training tab on its drills', A.ui.view + ' ' + A.ui.practice.tab, 'practice drills');
+  check('— the How to\'s Open Drills still lands on the library, in Training', A.ui.view + ' ' + A.ui.practice.tab + ' ' + A.curDoor(), 'practice drills training');
   as('trk'); m = more();
   check('a tracker: no Drills', m.includes('moredrills'), false);
   as('mum', 'mine'); m = more();

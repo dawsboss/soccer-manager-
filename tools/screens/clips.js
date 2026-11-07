@@ -41,7 +41,7 @@ const WALKS = {
   sessions: { who: 'mum', scen: 'quiet' },
   team: { who: 'jaz', scen: 'quiet' }, families: { who: 'jaz', scen: 'quiet' }, lineup: { who: 'jaz', scen: 'quiet' },
   sideline: { who: 'jaz', scen: 'live' }, after: { who: 'jaz', scen: 'quiet' }, practice: { who: 'jaz', scen: 'quiet' },
-  register: { who: 'jaz', scen: 'quiet' }, club: { who: 'boss', scen: 'quiet' }
+  register: { who: 'jaz', scen: 'quiet' }, club: { who: 'boss', scen: 'quiet' }, scheduler: { who: 'boss', scen: 'quiet' }
 };
 
 /* The caption bar and the tap ring live in the page, over the app, and are
@@ -313,14 +313,14 @@ const TOURS = {
     await h.say(2); await h.tap('#app [data-act="fixclock"]', 'Clock reading wrong?'); await h.hold(2200); await h.closeSheet();
     await h.say(3); await h.go('#/team/sbA/minutes'); await h.hold(2000);
   },
+  // Training is a door of its own since build 194 (TOOLS.md): the switch on the title row, its Home the plans, Drills its tab
   practice: async h => {
     await h.go('#/team/sbA/season');
-    await h.say(0); await h.go('#/team/sbA/practice'); await h.hold(800); await h.tap('#app [data-act="practab"][data-k="drills"]', 'Drills'); await h.hold(1000);
-    await h.tap('#app .drillrow', 'a drill'); await h.hold(2200); await h.closeSheet();
+    await h.say(0); await h.tap('#titlebar [data-act="doors"]', 'the switch'); await h.hold(900); await h.tap('#sheet [data-act="door"][data-d="training"]', 'Training'); await h.hold(1800);
     await h.say(1); await h.tab('calendar'); await h.tap('#app [data-act="calitem"][data-k="practice"]', 'the practice'); await h.hold(800);
     await h.tap('#sheet [data-act="pracfromcal"]', 'Plan'); await h.hold(2200);
-    await h.say(2); await h.tab('more'); await h.tap('#sheet [data-act="moredrills"]', 'Drills'); await h.hold(1800);
-    await h.say(3); await h.go('#/team/sbA/season'); await h.scroll(500); await h.hold(1500);
+    await h.say(2); await h.tab('drills'); await h.hold(1000); await h.tap('#app .drillrow', 'a drill'); await h.hold(2200); await h.closeSheet();
+    await h.say(3); await h.tab('home'); await h.scroll(500); await h.hold(1500);
   },
   register: async h => {
     await h.go('#/team/sbA/season'); await h.say(0); await h.tap('#app [data-act="attend"]', 'Who came?', true);
@@ -335,8 +335,15 @@ const TOURS = {
   club: async h => {
     await h.go('#/settings'); await h.say(0); await h.scroll(700); await h.hold(1500);
     await h.say(1); await h.tap('#app [data-act="goview"][data-v="people"]', 'People'); await h.hold(1500); await h.tap('#app [data-act="invitenew"]', 'Invite someone'); await h.hold(1800); await h.closeSheet();
-    await h.say(2); await h.go('#/club/scheduler'); await h.hold(2500);
-    await h.say(3); await h.go('#/settings'); await h.tap('#app [data-act="readysheet"]', 'Check readiness'); await h.hold(2000); await h.closeSheet();
-    await h.say(4); await h.tap('#app [data-act="backupsheet"]', 'Backup'); await h.hold(2000); await h.closeSheet();
+    await h.say(2); await h.go('#/settings'); await h.tap('#app [data-act="readysheet"]', 'Check readiness'); await h.hold(2000); await h.closeSheet();
+    await h.say(3); await h.tap('#app [data-act="backupsheet"]', 'Backup'); await h.hold(2000); await h.closeSheet();
+  },
+  // the Scheduler is a door of its own since build 194 (TOOLS.md): the switch, its Home, then the board
+  scheduler: async h => {
+    await h.go('#/team/sbA/season');
+    await h.say(0); await h.tap('#titlebar [data-act="doors"]', 'the switch'); await h.hold(900); await h.tap('#sheet [data-act="door"][data-d="scheduler"]', 'the Scheduler'); await h.hold(2200);
+    await h.say(1); await h.tab('scheduler'); await h.hold(2500);
+    await h.say(2); await h.hold(1500);
+    await h.say(3); await h.hold(1500);
   }
 };

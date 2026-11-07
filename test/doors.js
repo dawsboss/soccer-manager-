@@ -1,27 +1,40 @@
-/* Two doors, one app (DOORS.md; the owner, 2026-10-20).
+/* Four doors, one app (DOORS.md; the owner, 2026-10-20. TOOLS.md; the
+   owner, 2026-11-04: the point of the site is games and practices, when,
+   where, how long and who is going; everything else that schedules or plans
+   is a tool of its own, like Sessions).
 
-   Teams is the season (teams, games, practices, the Scheduler) and Sessions
-   the business (1-1s, groups, booking, fees, hours, fields). A door is a
-   mode the phone remembers, never a role; the screen decides it where a
-   screen names one, and the remembered door decides the shared screens.
-   What is easy to get quietly wrong, pinned here:
+   Teams is the season (teams, games, practices, who is coming, who came),
+   Training the drills and the practice plans, the Scheduler the club's
+   week on its fields, and Sessions the business (1-1s, groups, booking,
+   fees, hours). A door is a mode the phone remembers, never a role; the
+   screen decides it where a screen names one, and the remembered door
+   decides the shared screens. What is easy to get quietly wrong, pinned
+   here:
 
-   - Who has which door: everyone with sessions (an admin, a coach, a
-     family) has both; a tracker, a helper, a club viewer, a fan and a
-     player with her own sign-in have Teams alone, no switch, and a tap at
-     the other door is refused in the handler.
+   - Who has which door: an admin and a coach all four (the Scheduler
+     read-only for a coach); an assistant coach Teams and Training (she
+     plans); a family Teams and Sessions; a tracker, a club viewer, a fan
+     and a player with her own sign-in Teams alone. A door she does not
+     have is not drawn, and a tap at it is refused in the handler.
    - Where each starts: a family whose only children are on no team opens
      in Sessions; everyone else in Teams.
    - The same bar for everyone inside a door (UX-REVIEW-2.md, 9.1, amended):
      Home · Calendar · Game · Messages · More in Teams, Home · Calendar ·
-     Sessions · Messages · More in Sessions, the same ids for every role.
+     Drills · Messages · More in Training, Home · Calendar · Scheduler ·
+     Messages · More in the Scheduler, Home · Calendar · Sessions · Messages
+     · More in Sessions, the same ids for every role.
+   - One switch, on the title row, and nowhere else (the owner, 2026-11-04:
+     having multiple locations for doors scares me): the other door for
+     whoever has two, a sheet of hers for whoever has more; no door row on
+     More, no Sessions card on Club home, no row to another door's settings.
    - The screen decides the door: a session screen switches to Sessions, a
-     team's or a game's to Teams; the Calendar, Messages, Settings and More
-     keep the remembered door, through a reload.
-   - Calendar and Messages are one screen, the same in both doors.
-   - Sessions Home by role: a family's next session and what she can book,
-     with no other child's name; a coach's asks, sessions, times and hours;
-     an admin's across the club.
+     plan to Training, the board to the Scheduler, a team's or a game's to
+     Teams; the Calendar, Messages, Settings and More keep the remembered
+     door, through a reload.
+   - A link into a tool is a tap on a thing, not a switch: Plan on a
+     practice opens that practice's plan in Training.
+   - Calendar and Messages are one screen, the same in every door.
+   - Each door's Home by role, and nothing of a tool on the core's screens.
    - A locked device draws no door, no switch and no bar. */
 
 const H = require('./harness');
@@ -66,6 +79,9 @@ A.fb = { db: {}, ref: (db, p) => p, set: () => Promise.resolve(), remove: () => 
 const ROLES = { boss: 'an admin', jaz: 'a coach', trk: 'a tracker', hel: 'a helper', vee: 'a club viewer', mum: 'a parent', nan: 'a fan', kid: 'a player with her own sign-in', lou: 'a family with a child on no team' };
 const EVERYONE = Object.keys(ROLES);
 const BOTH = ['boss', 'jaz', 'mum', 'lou'], TEAMS_ONLY = ['trk', 'hel', 'vee', 'nan', 'kid'];
+// the doors each has (TOOLS.md): an assistant coach plans, so she has Training; a coach reads the Scheduler
+const DOORS_OF = { boss: 'teams training scheduler sessions', jaz: 'teams training scheduler sessions', trk: 'teams', hel: 'teams training', vee: 'teams', mum: 'teams sessions', nan: 'teams', kid: 'teams', lou: 'teams sessions' };
+const ONE_DOOR = ['trk', 'vee', 'nan', 'kid'];
 
 function sessions() {
   A.sess = { sessions: {}, booked: {}, came: {}, fees: {}, pay: {}, splans: {}, avail: {}, dirty: {} };
@@ -82,7 +98,7 @@ function as(uid, view = 'season', door = null) {
   sessions();
   A.me = uid ? { uid, name: uid, email: uid + '@x.test' } : null;
   A.appOwners = {};
-  A.ui.teamId = 't1'; A.ui.matchId = null; A.ui.view = view; A.ui.gameFrom = null; A.ui.editFid = null; A.ui.thread = null; A.ui.sess = null; A.ui.door = door;
+  A.ui.teamId = 't1'; A.ui.matchId = null; A.ui.view = view; A.ui.gameFrom = null; A.ui.editFid = null; A.ui.thread = null; A.ui.sess = null; A.ui.door = door; A.ui.practice = null;
   A.toasts.length = 0;
   A.closeSheet();
   A.render();
@@ -95,13 +111,14 @@ const title = () => A.rendered('#titlebar');
 const sheet = () => String(A.dom.node('#sheet').innerHTML || '');
 const more = () => { A.click({ act: 'tab', tab: 'more' }); const h = sheet(); A.closeSheet(); return h; };
 const TEAMS_BAR = 'home calendar game messages more', SESS_BAR = 'home calendar sessions messages more';
+const TRAIN_BAR = 'home calendar drills messages more', SCHED_BAR = 'home calendar scheduler messages more';
 const savedDoor = () => (JSON.parse(A.storage.getItem('sm.ui.v1') || '{}') || {}).door || null;
 
 console.log('--- who has which door, and where each starts ---');
 {
   for (const uid of EVERYONE) {
     as(uid);
-    check(`${ROLES[uid]}: ${BOTH.includes(uid) ? 'both doors' : 'Teams alone'}`, A.hasDoor('teams') + ' ' + A.hasDoor('sessions'), BOTH.includes(uid) ? 'true true' : 'true false');
+    check(`${ROLES[uid]}: ${DOORS_OF[uid].replace(/ /g, ', ')}`, A.myDoors().join(' '), DOORS_OF[uid]);
   }
   check('where each starts: a family whose only child is on no team in Sessions, everyone else in Teams', EVERYONE.map(u => { as(u); return u + ':' + A.defaultDoor(); }).join(' '), 'boss:teams jaz:teams trk:teams hel:teams vee:teams mum:teams nan:teams kid:teams lou:sessions');
   as('lou'); A.ui.door = null; A.landHome = true; A.landNow();
@@ -119,6 +136,12 @@ console.log('\n--- the same bar for everyone inside a door ---');
   // Lou has Messages too: her child is in Jaz's session, so she may write to Jaz (DOORS.md, Messages: people, not teams)
   for (const uid of EVERYONE) { as(uid); check(`${ROLES[uid]} in Teams: ${TEAMS_BAR}`, tabs(), uid === 'vee' ? TEAMS_BAR.replace(' messages', '') : TEAMS_BAR); }
   for (const uid of BOTH) { as(uid, 'sessions'); check(`${ROLES[uid]} in Sessions: ${SESS_BAR}`, tabs(), SESS_BAR); }
+  for (const uid of ['boss', 'jaz', 'hel']) { as(uid, 'practice'); check(`${ROLES[uid]} in Training: ${TRAIN_BAR}`, tabs(), TRAIN_BAR); }
+  for (const uid of ['boss', 'jaz']) { as(uid, 'schome'); check(`${ROLES[uid]} in the Scheduler: ${SCHED_BAR}`, tabs(), SCHED_BAR); }
+  as('jaz', 'practice');
+  check('— the same ids and labels in Training', A.navTabs().map(t => t.id + ':' + t.label).join(' '), 'home:Home calendar:Calendar drills:Drills messages:Messages more:More');
+  as('boss', 'schome');
+  check('— and in the Scheduler', A.navTabs().map(t => t.id + ':' + t.label).join(' '), 'home:Home calendar:Calendar scheduler:Scheduler messages:Messages more:More');
   as('jaz', 'sessions');
   check('— the same ids and labels, so one tap sequence is true on every phone', A.navTabs().map(t => t.id + ':' + t.label).join(' '), 'home:Home calendar:Calendar sessions:Sessions messages:Messages more:More');
   check('— the Sessions tab is lit on the list', lit(), 'sessions');
@@ -156,7 +179,13 @@ console.log('\n--- the screen decides the door; the shared screens keep it ---')
   as('jaz', 'sessions'); A.ui.view = 'game'; A.ui.matchId = 'g2'; A.render();
   check('a game puts her in Teams', A.curDoor(), 'teams');
   as('boss', 'sessions'); A.ui.view = 'scheduler'; A.render();
-  check('the Scheduler is Teams', A.curDoor(), 'teams');
+  check('the board is the Scheduler door', A.curDoor() + ' ' + tabs(), 'scheduler ' + SCHED_BAR);
+  as('boss', 'sessions'); A.ui.view = 'schome'; A.render();
+  check('— and so is its Home', A.curDoor(), 'scheduler');
+  as('jaz', 'sessions'); A.ui.view = 'practice'; A.render();
+  check('a plan is Training', A.curDoor() + ' ' + tabs(), 'training ' + TRAIN_BAR);
+  A.ui.view = 'calendar'; A.render();
+  check('— and the Calendar keeps Training', A.curDoor() + ' ' + tabs(), 'training ' + TRAIN_BAR);
   as('boss', 'sessions'); A.ui.view = 'club'; A.render();
   check('Club home is Teams', A.curDoor(), 'teams');
   // a reload: ui comes back from the phone, door included
@@ -180,70 +209,159 @@ console.log('\n--- the shared screens are the same in both doors ---');
   as('jaz', 'setup', 'teams'); const setT = page();
   as('jaz', 'setup', 'sessions'); const setS = page();
   check('Settings keeps the door she was in, and draws a different club section in each', A.curDoor() + ' ' + (setT !== setS), 'sessions true');
-  const noSwitch = h => h.replace(/<button class="tbdoor"[\s\S]*?<\/button>/, '');
+  const noSwitch = h => h.replace(/<button class="tbdoor( pick)?"[\s\S]*?<\/button>/, '');
   as('mum', 'calendar', 'teams'); const t = title(); as('mum', 'calendar', 'sessions');
   check('— and titled the same, only the switch naming the other door', noSwitch(title()) === noSwitch(t) && /data-d="teams"/.test(title()) && /data-d="sessions"/.test(t), true);
+  as('jaz', 'calendar', 'teams'); const t4 = title(); as('jaz', 'calendar', 'training');
+  check('— with four doors the switch names the door she is in, and the rest of the title is the same', noSwitch(t4) === noSwitch(title()) && /data-act="doors"[^>]*>[\s\S]*?<span>Teams<\/span>/.test(t4) && /data-act="doors"[^>]*>[\s\S]*?<span>Training<\/span>/.test(title()), true);
   // the account sheet is the account alone, the same in both doors
   as('jaz', 'season'); A.click({ act: 'accountsheet' }); const acT = sheet(); A.closeSheet();
   as('jaz', 'sessions'); A.click({ act: 'accountsheet' }); const acS = sheet(); A.closeSheet();
   check('the account sheet is the same in both doors', acT === acS, true);
 }
 
-console.log('\n--- Settings, by door (the owner, 2026-10-25) ---');
+console.log('\n--- Settings, by door (the owner, 2026-10-25; TOOLS.md) ---');
 {
   const acts = h => new Set([...h.matchAll(/data-act="(\w+)"(?: data-(?:v|k|d)="([^"]*)")?/g)].map(m => m[2] ? m[1] + ':' + m[2] : m[1]));
   as('boss', 'setup', 'teams'); let a = acts(page());
-  check('an admin in Teams: the season\'s club rows', ['goview:admin', 'goview:people', 'scheduler', 'sesstab:fields', 'goview:comply', 'clubdrills', 'tpllist:clubTpl', 'bulkimport'].every(x => a.has(x)), true);
-  check('— and no registrations, fees or hours', ['goview:regs', 'sesstab:fees', 'sesstab:hours'].some(x => a.has(x)), false);
+  check('an admin in Teams: the season\'s club rows', ['goview:admin', 'goview:people', 'sesstab:fields', 'goview:comply', 'bulkimport'].every(x => a.has(x)), true);
+  check('— and nothing of the tools: no Scheduler, club drills or templates, registrations, fees or hours', ['scheduler', 'clubdrills', 'tpllist:clubTpl', 'goview:regs', 'sesstab:fees', 'sesstab:hours'].some(x => a.has(x)), false);
   check('— the club section says whose', /<h2 class="sechead">Club · Teams<\/h2>/.test(page()), true);
-  check('— one row to the Sessions settings', a.has('door:sessions') && /Sessions settings/.test(page()), true);
-  A.click({ act: 'door', d: 'sessions', v: 'setup' });
-  a = acts(page());
-  check('— which stays on Settings, now in Sessions', A.ui.view + ' ' + A.curDoor(), 'setup sessions');
+  check('— and no row to another door\'s settings: the switch up top is the one way between doors', /data-act="doors?"/.test(page().replace(A.rendered('#titlebar'), '')), false);
+  as('boss', 'setup', 'training'); a = acts(page());
+  check('an admin in Training: the club\'s shelves, under Club · Training', a.has('clubdrills') && a.has('tpllist:clubTpl') && /<h2 class="sechead">Club · Training<\/h2>/.test(page()), true);
+  check('— My drills too, since an admin plans for any team, and nothing of the season or the business', a.has('mydrills') + ' ' + (['goview:admin', 'goview:people', 'scheduler', 'goview:comply', 'bulkimport', 'goview:regs', 'sesstab:fees', 'editteam:t1'].some(x => a.has(x)) || /This team/.test(page())), 'true false');
+  as('jaz', 'setup', 'training'); a = acts(page());
+  check('a coach in Training: My drills under You, and no club section', a.has('mydrills') + ' ' + a.has('clubdrills') + ' ' + /Club ·/.test(page()), 'true false false');
+  as('boss', 'setup', 'scheduler'); a = acts(page());
+  check('an admin in the Scheduler: Fields and permits, alone', [...a].filter(x => /^(goview|sesstab|scheduler|clubdrills|tpllist|bulkimport|editteam)/.test(x)).join(), 'sesstab:fields');
+  check('— under Club · Scheduler', /<h2 class="sechead">Club · Scheduler<\/h2>/.test(page()), true);
+  as('boss', 'setup', 'sessions'); a = acts(page());
   check('an admin in Sessions: registrations, fields, fees, hours, people, the club', ['goview:admin', 'goview:people', 'goview:regs', 'sesstab:fields', 'sesstab:fees', 'sesstab:hours', 'bulkimport'].every(x => a.has(x)), true);
-  check('— and none of the season\'s: no Scheduler, compliance, club drills or a team\'s set-up', ['scheduler', 'goview:comply', 'clubdrills', 'tpllist:clubTpl', 'formations', 'trackcfg', 'sharesheet'].some(x => a.has(x)) || /This team/.test(page()), false);
-  check('— and a row back to the Teams settings', a.has('door:teams'), true);
+  check('— and none of the season\'s or Training\'s: no Scheduler, compliance, club drills or a team\'s set-up', ['scheduler', 'goview:comply', 'clubdrills', 'tpllist:clubTpl', 'formations', 'trackcfg', 'sharesheet'].some(x => a.has(x)) || /This team/.test(page()), false);
   A.click({ act: 'goview', v: 'regs' });
   check('Registrations are the Sessions door\'s, and Back goes to its Settings', A.curDoor() + ' ' + A.upView(), 'sessions setup');
   as('boss', 'setup', 'teams'); A.click({ act: 'sesstab', k: 'fields' });
   check('Fields from the Teams settings stays in Teams', A.ui.view + ' ' + A.curDoor(), 'sessions teams');
+  as('boss', 'setup', 'scheduler'); A.click({ act: 'sesstab', k: 'fields' });
+  check('— from the Scheduler\'s stays in the Scheduler', A.curDoor(), 'scheduler');
   as('boss', 'setup', 'sessions'); A.click({ act: 'sesstab', k: 'fields' });
   check('— and from the Sessions settings stays in Sessions', A.curDoor(), 'sessions');
   as('trk', 'setup');
-  check('a tracker, with one door: a plain Settings, no switch', /data-act="door"/.test(page()), false);
+  check('a tracker, with one door: a plain Settings, no switch', /data-act="doors?"/.test(page()), false);
   as('mum', 'setup', 'sessions');
   check('a family in Sessions: nothing of the club to set, no switch row', /Club ·|data-act="door"[^>]*data-v="setup"/.test(page()), false);
 }
 
-console.log('\n--- the switch ---');
+console.log('\n--- the one switch, on the title row (TOOLS.md; the owner, 2026-11-04) ---');
 {
-  as('jaz');
-  let m = more();
-  check('More in Teams offers the Sessions door, with its icon, and no Sessions row of the old kind', /data-act="door" data-d="sessions"[\s\S]*?<span class="dooric"><svg/.test(m) && !/data-v="sessions"/.test(m), true);
-  check('— and still the Teams door\'s rows: All teams for an admin, Drills for a coach', /data-act="moredrills"/.test(m) && !/data-d="teams"/.test(m), true);
+  as('mum');
+  check('two doors: the button is the other one, its icon and name, one tap', /<button class="tbdoor" data-act="door" data-d="sessions"[^>]*><svg[\s\S]*?<\/svg><span>Sessions<\/span><\/button>/.test(title()), true);
   A.click({ act: 'door', d: 'sessions' });
-  check('tapping it goes to the Sessions Home and remembers the door', A.ui.view + ' ' + A.curDoor() + ' ' + savedDoor(), 'shome sessions sessions');
-  m = more();
-  check('More in Sessions offers Teams, with the club\'s session screens, and no Drills or All teams', /data-act="door" data-d="teams"/.test(m) && ['fields', 'fees', 'hours'].every(k => m.includes(`data-act="sesstab" data-k="${k}"`)) && !/moredrills|data-act="schedule"/.test(m), true);
+  check('— which goes to the Sessions Home and remembers the door', [A.ui.view, A.curDoor(), savedDoor()].join(' '), 'shome sessions sessions');
+  check('— and the button is now Teams', /data-act="door" data-d="teams"/.test(title()) && !/data-d="sessions"/.test(title()), true);
   A.click({ act: 'door', d: 'teams' });
+  check('— and back to her child\'s team\'s Home', A.ui.view + ' ' + A.curDoor(), 'season teams');
+  as('jaz');
+  check('four doors: the button names the door she is in, with a chevron, and is no door itself', /<button class="tbdoor pick" data-act="doors" aria-label="Switch to Training, Scheduler and Sessions"[^>]*>[\s\S]*?<span>Teams<\/span>/.test(title()) && !/data-act="door"/.test(title()), true);
+  A.click({ act: 'doors' });
+  check('— tapping it opens the sheet of her doors, the one she is in marked', /<h3>Switch to<\/h3>/.test(sheet()) + ' ' + [...sheet().matchAll(/data-act="door" data-d="(\w+)" aria-current="(\w+)"/g)].map(m => m[1] + ':' + m[2]).join(' '), 'true teams:true training:false scheduler:false sessions:false');
+  check('— each with its icon and a line', (sheet().match(/<span class="dooric"><svg/g) || []).length + ' ' + /Drills and practice plans/.test(sheet()), '4 true');
+  A.click({ act: 'door', d: 'training' });
+  check('— Training: its Home, the plans, remembered', [A.ui.view, A.ui.practice.tab, A.curDoor(), savedDoor()].join(' '), 'practice plans training training');
+  check('— the button now says Training', /data-act="doors"[^>]*aria-label="Switch to Teams, Scheduler and Sessions"[^>]*>[\s\S]*?<span>Training<\/span>/.test(title()), true);
+  A.click({ act: 'doors' }); A.click({ act: 'door', d: 'scheduler' });
+  check('— the Scheduler: its Home', A.ui.view + ' ' + A.curDoor(), 'schome scheduler');
+  A.click({ act: 'doors' }); A.click({ act: 'door', d: 'sessions' });
+  check('— Sessions: its Home', A.ui.view + ' ' + A.curDoor(), 'shome sessions');
+  A.click({ act: 'doors' }); A.click({ act: 'door', d: 'teams' });
   check('— and back to the team\'s Home in Teams', A.ui.view + ' ' + A.curDoor(), 'season teams');
+  // one switch: nothing on More, Club home or Settings opens another door
+  let m = more();
+  check('More has no door row and no Drills: the switch is the title row\'s alone', /data-act="doors?"|moredrills/.test(m), false);
   as('boss'); m = more();
-  check('an admin keeps All teams in Teams', /data-act="schedule"/.test(m), true);
+  check('— an admin keeps All teams in Teams, with no door row', /data-act="schedule"/.test(m) && !/data-act="doors?"/.test(m), true);
   as('boss', 'shome'); m = more();
-  check('— and in Sessions gets Fields, Session fees and Coach hours', (m.match(/data-act="sesstab"/g) || []).length, 3);
-  as('mum', 'shome'); m = more();
-  check('a family in Sessions: Teams, Settings, no club screens', /data-d="teams"/.test(m) && !/sesstab/.test(m), true);
-  for (const uid of TEAMS_ONLY) {
+  check('More in Sessions: Fields, Session fees and Coach hours, no Drills or All teams, no door row', (m.match(/data-act="sesstab"/g) || []).length + ' ' + /moredrills|data-act="schedule"|data-act="doors?"/.test(m), '3 false');
+  as('jaz', 'practice'); m = more();
+  check('More in Training: the club, How to, Settings and Sign out; no Drills, All teams or door row', ['data-v="club"', 'data-act="howto"', 'data-v="setup"', 'data-act="signout"'].every(x => m.includes(x)) && !/moredrills|data-act="schedule"|data-act="doors?"|sesstab/.test(m), true);
+  as('boss', 'club');
+  check('Club home has no Sessions card and no club week card: the switch and the Scheduler\'s Home have them', /data-v="shome"|clubweek|data-act="scheduler"|What needs looking at/.test(page()), false);
+  for (const uid of ONE_DOOR) {
     as(uid); m = more();
     const before = A.ui.view;
     A.click({ act: 'door', d: 'sessions' });
-    check(`${ROLES[uid]}: no door on More, and a tap at it refused in the handler`, !/data-act="door"/.test(m) && A.lastToast() === 'Sessions are for coaches, admins and families' && A.ui.view === before, true);
+    check(`${ROLES[uid]}: no switch, no door on More, and a tap at Sessions refused in the handler`, !/tbdoor/.test(title()) && !/data-act="doors?"/.test(m) && A.lastToast() === 'Sessions are for coaches, admins and families' && A.ui.view === before, true);
+    A.click({ act: 'door', d: 'training' });
+    check(`— and at Training`, A.lastToast() === 'Training is for coaches and admins' && A.ui.view === before, true);
+    A.click({ act: 'door', d: 'scheduler' });
+    check(`— and at the Scheduler`, A.lastToast() === 'The Scheduler is for coaches and club admins' && A.ui.view === before, true);
+    A.click({ act: 'tab', tab: 'drills' });
+    check(`— and at the Drills tab`, A.lastToast() === 'Training is for coaches and admins' && A.ui.view === before, true);
+    A.click({ act: 'tab', tab: 'scheduler' });
+    check(`— and at the Scheduler tab`, A.lastToast() === 'The Scheduler is for coaches and club admins' && A.ui.view === before, true);
+    A.click({ act: 'doors' });
+    check(`— and the sheet of doors opens nothing for her`, A.dom.node('#sheet').hidden, true);
   }
+  as('hel'); const before = A.ui.view; A.click({ act: 'door', d: 'sessions' });
+  check('an assistant coach: Sessions refused', A.lastToast() === 'Sessions are for coaches, admins and families' && A.ui.view === before, true);
+  A.click({ act: 'door', d: 'training' });
+  check('— and Training hers, the one-tap button', A.ui.view + ' ' + A.curDoor() + ' ' + /data-act="door" data-d="teams"/.test(title()), 'practice training true');
   as('lou'); A.ui.door = 'teams'; A.render();
   check('a family of a child on no team, in Teams: Home says so and offers Sessions', /<h2>No team yet<\/h2>/.test(page()) && /Nell is in the club and not on a team/.test(page()) && /data-act="door" data-d="sessions"/.test(page()), true);
   check('— naming no other child', new RegExp([ROSA, ELLA, MIA, QUINN].join('|')).test(page()), false);
-  as('boss', 'club');
-  check('Club home\'s Sessions card opens the Sessions Home', /data-act="goview" data-v="shome"/.test(page()), true);
+}
+
+console.log('\n--- the Training door ---');
+{
+  as('jaz', 'practice'); A.ui.practice = { tab: 'plans' }; A.render();
+  check('Home is the team\'s plans: the practices, each with Plan it or its plan', /<h2>Practices<\/h2>/.test(page()) && /data-act="pracfromcal"/.test(page()), true);
+  check('— the Home tab lit, the team over the club with Training on the club line', lit() + ' ' + /<span>Training · Lakeside SC<\/span>/.test(title()), 'home true');
+  check('— no chips over it, no team tab row, no back arrow', /data-act="practab"/.test(page()) + ' ' + A.dom.node('#tabs').hidden + ' ' + /tbback/.test(title()), 'false true false');
+  check('— what needs work is here', /What needs work/.test(page()), true);
+  A.click({ act: 'tab', tab: 'drills' });
+  check('Drills is the library, with Positions a chip beside it', [A.ui.view, A.ui.practice.tab, lit(), /data-act="practab" data-k="positions"/.test(page()), /data-act="drill"/.test(page())].join(' '), 'practice drills drills true true');
+  check('— a tab\'s own screen too: no back arrow', /tbback/.test(title()), false);
+  A.click({ act: 'tab', tab: 'home' });
+  check('Home again: the plans', A.ui.view + ' ' + A.ui.practice.tab + ' ' + lit(), 'practice plans home');
+  A.ui.view = 'teamstats'; A.render();
+  check('Stats keeps the numbers and not the card', /What needs work/.test(page()), false);
+  as('jaz', 'season', 'teams');
+  check('Season keeps Plan on its practices: a link, not a switch', /data-act="pracfromcal"/.test(page()), true);
+  A.click({ act: 'pracfromcal', tid: 't1', id: 'e1' });
+  check('— which opens that practice\'s plan in Training', [A.ui.view, A.ui.practice.open, A.curDoor()].join(' '), 'practice e1 training');
+  as('boss', 'practice');
+  check('an admin plans for any team, as a coach of all of them: the plans are her Home too', /<h2>Practices<\/h2>/.test(page()) && /data-act="(pracfromcal|pracopen)"/.test(page()), true);
+  as('jaz', 'practice'); A.ui.teamId = 't2'; A.render();
+  check('a coach on another team\'s screen: whose the plans are, and no plan of it', /Plans are for this team's coaches/.test(page()) + ' ' + /data-act="pracfromcal"|data-act="pracnew"/.test(page()), 'true false');
+  as('hel', 'practice');
+  check('an assistant coach plans, so she has the door', A.ui.view + ' ' + A.curDoor() + ' ' + tabs(), 'practice training ' + TRAIN_BAR);
+  as('trk', 'practice');
+  check('a tracker sent to Training lands on Season, in Teams, with no drill on the screen', [A.ui.view, A.curDoor(), /data-act="drill"/.test(page())].join(' '), 'season teams false');
+  as('mum', 'practice');
+  check('— and a parent on her Home', [A.ui.view, A.curDoor(), /data-act="drill"/.test(page())].join(' '), 'season teams false');
+}
+
+console.log('\n--- the Scheduler door ---');
+{
+  as('boss', 'schome');
+  check('an admin\'s Home: what needs looking at this week, the term, and a row into each of the board\'s chips', /What needs looking at/.test(page()) + ' ' + /<h2[^>]*>The term<\/h2>/.test(page()) + ' ' + [...page().matchAll(/data-act="schgo" data-k="(\w+)"/g)].map(m => m[1]).join(), 'true true board,term,rules,find,coach,pic');
+  check('— titled Home over the club, Scheduler on the club line, no back arrow', /class="tbtitle"><span>Home<\/span>/.test(title()) && /<span>Scheduler · Lakeside SC<\/span>/.test(title()) && !/tbback/.test(title()), true);
+  A.click({ act: 'schgo', k: 'rules' });
+  check('a row opens the board on that chip', A.ui.view + ' ' + A.ui.planner.tab + ' ' + lit(), 'scheduler rules scheduler');
+  check('— a tab\'s own screen: no back arrow, Scheduler on the club line', !/tbback/.test(title()) && /<span>Scheduler · Lakeside SC<\/span>/.test(title()), true);
+  A.click({ act: 'tab', tab: 'home' });
+  check('Home again', A.ui.view + ' ' + lit(), 'schome home');
+  as('jaz', 'schome');
+  check('a coach\'s Home: her teams this week and the board, read-only; no strip, no term, no rules', /Your teams this week/.test(page()) && /data-act="schgo" data-k="board"/.test(page()) && !/What needs looking at|The term|data-k="rules"/.test(page()), true);
+  A.click({ act: 'schgo', k: 'rules' });
+  check('— a coach\'s tap at an admin\'s chip lands on the board', A.ui.view + ' ' + A.ui.planner.tab, 'scheduler board');
+  as('trk', 'schome');
+  check('a tracker sent there lands on Club home, in Teams', A.ui.view + ' ' + A.curDoor(), 'club teams');
+  as('mum', 'schome');
+  check('— and a parent too', A.ui.view + ' ' + A.curDoor(), 'club teams');
+  as('boss', 'setup', 'teams');
+  check('no Scheduler tile on Settings: it is a door, reached by the switch', /data-act="scheduler"/.test(page()), false);
 }
 
 console.log('\n--- the Sessions Home, by role ---');
@@ -274,6 +392,18 @@ console.log('\n--- addresses ---');
   check('— and #/sessions opens it, in the Sessions door', A.hashToUi() && A.ui.view + ' ' + (A.render(), A.curDoor()), 'shome sessions');
   global.location.hash = '#/training'; A.hashToUi();
   check('#/training stays the list of sessions', A.ui.view + ' ' + A.ui.sess.tab, 'sessions list');
+  as('boss', 'schome');
+  check('the Scheduler Home is #/scheduler', A.uiToHash(), '#/scheduler');
+  global.location.hash = '#/scheduler'; A.ui.view = 'season';
+  check('— and #/scheduler opens it, in the Scheduler door', A.hashToUi() && A.ui.view + ' ' + (A.render(), A.curDoor()), 'schome scheduler');
+  global.location.hash = '#/club/scheduler'; A.hashToUi();
+  check('#/club/scheduler stays the board', A.ui.view, 'scheduler');
+  as('jaz', 'practice'); A.ui.practice = { tab: 'plans' };
+  check('Training\'s Home is #/team/t1/practice, its library #/team/t1/drills', A.uiToHash() + ' ' + (A.ui.practice.tab = 'drills', A.uiToHash()), '#/team/t1/practice #/team/t1/drills');
+  global.location.hash = '#/team/t1/drills'; A.ui.view = 'season';
+  check('— and #/team/t1/drills opens the library, in Training', A.hashToUi() && A.ui.view + ' ' + A.ui.practice.tab + ' ' + (A.render(), A.curDoor()), 'practice drills training');
+  global.location.hash = '#/team/t1/practice'; A.ui.view = 'season';
+  check('— #/team/t1/practice the plans', A.hashToUi() && A.ui.view + ' ' + A.ui.practice.tab, 'practice plans');
   global.location.hash = '#/team/t1/season'; A.hashToUi(); A.render();
   check('a team\'s address opens in Teams, whatever door she was in', A.curDoor(), 'teams');
   global.location.hash = '';
@@ -282,4 +412,4 @@ console.log('\n--- addresses ---');
   global.location.hash = '';
 }
 
-H.summary('two doors, Teams and Sessions');
+H.summary('four doors: Teams, Training, the Scheduler and Sessions');

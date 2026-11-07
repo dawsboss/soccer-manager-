@@ -17,6 +17,18 @@ door a bar of its own, the screen naming its door, a switch for whoever has
 more than one) for two doors. This brief uses it for four, and trims the
 first down to the point of the site.
 
+**Decided and built** (the owner, 2026-11-04, *just go for it*; build 194):
+the four recommendations under *Open questions* were taken as written, and
+one amendment came from the owner's second word the same day, *does having
+all these buttons to move confuse the user? … having multiple locations for
+doors scares me*: **one switch, in one place.** The title-row button is the
+only way between doors; the row on More, the Sessions tile on Club home,
+the club week card there and the row at the foot of Settings to the other
+door's settings all came out. A link into a tool (*Plan* on a practice) is a
+tap on a thing, never a switch, and Back brings her back. The sections below
+are the brief as agreed; where the build differs from a sentence of the
+brief it is said inline in *(built: …)*.
+
 ---
 
 ## What people are trying to do
@@ -73,7 +85,7 @@ first down to the point of the site.
 | Bar | Home · Calendar · Game · Messages · More | Home · Calendar · Drills · Messages · More | Home · Calendar · Scheduler · Messages · More | Home · Calendar · Sessions · Messages · More |
 | Home | as today, less what moves out (below) | her teams' next practices with Plan / Open plan, *what needs work* per team, templates | the strip: short teams, still to settle, stranded slots, the coaches' word; the term; Find a time, Picture day, Coaches | as built |
 | Third tab | Games | the library: built-in, the club's, Mine; Positions | the board, with The term and Rules as today's chips | the Sessions list |
-| Who | everyone but a session coach of no team | `canTrain()` (a coach or helper of any team), and an admin for the club's shelves | `canSched()`: an admin; a coach read-only, with her word on her own slot | `canSessions()` |
+| Who | everyone but a session coach of no team | `canTrain()`: a coach or assistant coach of any team, and an admin, who is a coach of every team (`isCoach()`) and plans for any | `canSched()`: an admin; a coach read-only, with her word on her own slot | `canSessions()` |
 
 Teams keeps its name: it is the teams, their games and practices. The tools
 take the names their screens already have in `GLOSSARY.md`, **Training** and
@@ -106,12 +118,12 @@ sessions.
 - Her games as today (the open question below), with the Game tab, Subs,
   Track, Lineup, Stats, Live and the Recap.
 - More: My players (a coach with a daughter elsewhere), All teams (an admin),
-  the tools she has (one row each, with its icon and line), How to,
-  Settings, Clubs, Sign out.
+  How to, Settings, Clubs, Sign out. *(Built: no row to a tool on More; the
+  switch is the title row's alone.)*
 - Settings: You, Notifications, This team, Club · Teams (Club details,
   People, Fields and permits, Coach compliance, Bulk import), Advanced,
-  About. The other tools' settings one wide card each at the foot, as the
-  Sessions settings card is now.
+  About. *(Built: no card to another door's settings at the foot; switch
+  door first, and Settings is that door's.)*
 
 **An admin** adds games and practices from the Calendar's `+` and a team's
 Season as today, and keeps All teams. Coaches and helpers keep adding for
@@ -132,7 +144,7 @@ reached through the tool's door, or a link into it.
 | The ***what needs work*** card on Season | Training Home, one per team she plans for |
 | **Plan** on Season's Coming up rows | stays, as the link into Training (below) |
 | The **Scheduler** tile on Settings · Club · Teams | the Scheduler door |
-| The **club week card** on Club home and on the Calendar's All teams | the Scheduler's Home (the strip); Club home keeps one line into it |
+| The **club week card** on Club home and on the Calendar's All teams | the Scheduler's Home (the strip) *(built: nothing of it on Club home, not even a line; the switch is the way)* |
 | The **Planner**: Find a time, Picture day, Coaches, clashes | the Scheduler, as its chips are today; the Planner's words off More's All teams line |
 | **All teams** on More and Club home | stays: it is the calendar |
 | **Fields and permits** | the club's, as `DOORS.md` has it: reachable from Teams, the Scheduler and Sessions, opening in whichever door she is in |
@@ -149,11 +161,11 @@ the core.
   opens that practice's plan in Training and switches the door. Training's
   Home lists the same practices from the calendar, since a plan reads its
   entry. Nothing of the plan (its drills, its minutes) is drawn on the core.
-- **The calendar → the Scheduler.** For an admin, Club home's one line (*2
-  teams short this week · Scheduler*) and the All teams view's one line
-  open the board on that week. The Scheduler writes the term onto the
+- **The calendar → the Scheduler.** The Scheduler writes the term onto the
   calendars as it does, and the core shows the result as entries, with no
-  mark of where they came from.
+  mark of where they came from. *(Built without the line on Club home and
+  All teams the brief offered: a tool is quiet until she goes in, and the
+  switch is the one way.)*
 - **A coach's slot → her word.** A coach opens the Scheduler (read-only)
   from More and gives *Works for me* / *This doesn't work* there, as built.
   Nothing of it on her Season.
@@ -170,12 +182,16 @@ With up to four:
 - **Two doors**: unchanged. A family with sessions keeps the one-tap
   *Sessions* / *Teams* button that is built and captured.
 - **Three or more**: the button draws the door she is in (its icon and
-  name) and opens a sheet, `sheetDoors()`, listing every door she has with
-  its icon and one line (the same lines More uses: *Your teams, games and
-  practices* · *Drills and practice plans* · *The club's week on its fields*
-  · *1-1s, groups, booking and fees*), the current one marked. More carries
-  the same rows under a **Tools** heading, and Club home a tile per tool
-  (today's Sessions tile generalised).
+  name, with a chevron) and opens a sheet, `sheetDoors()`, titled *Switch
+  to*, listing every door she has with its icon and one line (*Your teams,
+  games and practices* · *Drills and practice plans* · *The club's week on
+  its fields* · *1-1s, groups, booking and fees*), the current one marked
+  *Here*.
+- **Nowhere else.** *(Amended the same day, the owner: having multiple
+  locations for doors scares me.)* No row on More, no tile on Club home, no
+  card at the foot of Settings. The one exception kept is the *Sessions*
+  button on the Home of a family whose children are on no team, which is
+  that Home's only content and says where her sessions are.
 - Whoever has one door has no button, as now, and a tap at a door she does
   not have is refused in the handler (the retire-club rule).
 
@@ -185,7 +201,7 @@ Decided from where her uid appears, never stored (`defaultDoor()` extended):
 
 | Account | Doors | Opens in |
 | --- | --- | --- |
-| Admin | Teams, Training (the shelves), Scheduler, Sessions | Teams |
+| Admin | all four (Training as a coach of every team: she plans for any, and tidies the club's shelves) | Teams |
 | Coach of a team | all four (the Scheduler read-only) | Teams |
 | Team helper (Assistant coach) | Teams, Training (she plans today, `canTrain()`) | Teams |
 | Tracker | Teams | Teams |
@@ -205,13 +221,14 @@ database for a plan, a shelf or the club's needs: what `test/plans.js`,
 Settings is already the door's (`DOORS.md`, build 187). Two more Club
 sections:
 
-- **Club · Training**: Club drills, Club templates (admins), My drills (a
-  coach's own, under You there and nowhere else).
+- **Club · Training**: Club drills, Club templates (admins), My drills (her
+  own, under You there and nowhere else).
 - **Club · Scheduler**: Fields and permits, and the club's rules and tiers if
   the owner would rather they sit here than as the board's Rules chip
   (recommended: leave them on the board, where a change is seen at once).
 
-The other tools' settings cards at the foot of each, for whoever has them.
+No card to another tool's settings at the foot of any of them *(the
+amendment)*: she switches door, and Settings is that door's.
 
 ### The title row
 
@@ -258,6 +275,8 @@ them as it does.
 
 ## Open questions for the owner
 
+All four answered by the owner's *go for it* (2026-11-04) as recommended.
+
 1. **The game itself.** Subs, Track, Lineup, Stats, Live, the Recap, Shapes,
    and Season's Stats and Minutes rows are match day, neither scheduling nor
    planning, and the Game tab is a family's door to the score. Recommended:
@@ -280,7 +299,7 @@ them as it does.
 Each step ships on its own, with `node test/run.js` green and no rules
 change; nothing in a later one is needed for an earlier one to hold.
 
-1. **Doors as a list, and the picker.** `DOORS` grows to four with an icon
+1. **Doors as a list, and the picker** *(built, build 194)*. `DOORS` grows to four with an icon
    and a line each; `hasDoor()`, `defaultDoor()`, `doorOf()` and `navTabs()`
    read the list; `sheetDoors()` for three or more, the two-door button
    kept; More's Tools rows and Club home's tiles from the same list; the
@@ -290,7 +309,7 @@ change; nothing in a later one is needed for an earlier one to hold.
    phone never offered Training or the Scheduler. Nothing moves yet: the two
    new doors are empty of screens and not offered until steps 2 and 3, so
    this step changes nothing a person sees.
-2. **The Training door.** Its Home by role from the pieces Season and the
+2. **The Training door** *(built, build 194)*. Its Home by role from the pieces Season and the
    Training tab draw now (`comingUpCard()`'s practices, `needsWorkCard()`,
    the templates), Drills as its third tab (`viewPractice()`'s drills and
    positions), its Settings section (Club drills, Club templates, My
@@ -300,17 +319,18 @@ change; nothing in a later one is needed for an earlier one to hold.
    `test/same.js` and `test/screens.js` amended where they name the tab;
    `test/doors.js` walks it as a coach, a helper and an admin and refuses
    the rest.
-3. **The Scheduler door.** Its Home (the strip, the term, the three Planner
+3. **The Scheduler door** *(built, build 194)*. Its Home (the strip, the term, the three Planner
    chips as buttons), the board as its third tab, the Scheduler tile and
    the club week card off the core (one line into it kept on Club home and
    All teams), the Planner's words off More, its Settings section, How to's
    topic. `test/scheduler.js`, `test/planner.js`, `test/schedule.js` and
    `test/settings.js` amended where they reach it; `test/doors.js` walks it
    as an admin and a coach and refuses the rest.
-4. **The core trimmed and captured.** Settings · Club · Teams down to Club
+4. **The core trimmed and captured** *(built, build 194; the `doors` tour in `tools/screens/`)*. Settings · Club · Teams down to Club
    details, People, Fields and permits, Coach compliance, Bulk import;
    `settingsLine()` and `sessClubLine()`'s siblings for each tool; every
    door captured with `tools/screens/` (a `tools` tour: each door's Home,
    third tab, More and Settings as each role that has it) and the How to
    clips made again.
 5. **Match day as a tool**, only if the owner answers question 1 that way.
+   *(Not taken: the game stays in the core.)*

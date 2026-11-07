@@ -21,7 +21,8 @@ const { check, deepEq } = H;
 const CFG = { apiKey: 'k', databaseURL: 'https://prod.example' };
 const A = H.loadApp({ config: CFG });
 const L = require('../drills.js');
-const tab = () => A.dom.node('#tabs [data-view="practice"]');
+// Training is a door of its own since build 194 (TOOLS.md): who has it is who had the tab
+const tab = () => ({ hidden: !A.hasDoor('training') });
 const sheet = () => String(A.dom.node('#sheet').innerHTML || '');
 
 const club = () => ({
@@ -48,10 +49,10 @@ function as(uid, tid = 't1', state = club()) {
 }
 const open = () => { A.ui.view = 'practice'; A.render(); return A.ui.view; };
 
-console.log('--- who gets the Practice tab ---');
+console.log('--- who gets the Training door ---');
 {
   as('jaz');
-  check('a coach has the tab', tab().hidden, false);
+  check('a coach has the door', tab().hidden, false);
   check('and opening it stays on it', open(), 'practice');
   check('the library is on the screen', /data-act="drill"/.test(A.rendered()), true);
 
@@ -62,30 +63,30 @@ console.log('--- who gets the Practice tab ---');
   check('so does another team\'s coach, on this one', open(), 'practice');
 
   as('boss');
-  check('an admin has the tab', tab().hidden, false);
+  check('an admin has the door', tab().hidden, false);
   check('and it opens', open(), 'practice');
 
   as('own'); A.appOwners = { own: true };
   check('the app owner has it', open(), 'practice');
 
   as('trk');
-  check('a tracker has NO tab', (A.render(), tab().hidden), true);
+  check('a tracker has NO door', (A.render(), tab().hidden), true);
   check('and a link to it lands on the team\'s Season, where the games are', open(), 'season');
   check('with no drill on the screen', /data-act="drill"/.test(A.rendered()), false);
 
   as('mum');
-  check('a parent has NO tab', (A.render(), tab().hidden), true);
+  check('a parent has NO door', (A.render(), tab().hidden), true);
   check('and a link to it lands elsewhere', open() === 'practice', false);
   check('with no drill on the screen', /data-act="drill"/.test(A.rendered()), false);
 
   as('stranger');
-  check('signed in to nothing: no tab', (A.render(), tab().hidden), true);
+  check('signed in to nothing: no door', (A.render(), tab().hidden), true);
 
   /* Before a club has an admin nothing is gated, the same as every other
      screen, so a coach trying the app out alone has the library at once. */
   const open1 = club(); delete open1.access.admins;
   as(null, 't1', open1);
-  check('a club with no admin yet: the tab is there', (A.render(), tab().hidden), false);
+  check('a club with no admin yet: the door is there', (A.render(), tab().hidden), false);
   check('and it opens', open(), 'practice');
 }
 
@@ -325,10 +326,11 @@ console.log('\n--- links straight to the tab ---');
 {
   as('jaz');
   A.ui.view = 'practice';
-  check('the tab has its own address', A.uiToHash(), '#/team/t1/practice');
+  check('the library has its own address, and the plans theirs', A.uiToHash() + ' ' + (A.ui.practice.tab = 'plans', A.uiToHash()), '#/team/t1/drills #/team/t1/practice');
   A.ui.view = 'matches';
   global.location.hash = '#/team/t1/practice';
   check('and the address opens it', A.hashToUi() && A.ui.view, 'practice');
+  A.ui.practice.tab = 'drills';
 }
 
 console.log('\n--- the team\'s birth year ---');

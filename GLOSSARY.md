@@ -16,8 +16,8 @@ secretary already has.
 | Concept | Word | Not |
 |---|---|---|
 | The bar at the bottom (one for everyone since build 153) | **Home** · **Calendar** · **Game** · **Messages** · **More** | Team (the tab), Club, Season, Live |
-| The two doors (DOORS.md; build 179) | **Teams** (the season) and **Sessions** (the business), each with its own bar: in Sessions **Home** · **Calendar** · **Sessions** · **Messages** · **More** | Training (as the door; it is the team's tab), Business, Academy, Mode |
-| A team's own tabs | **Season** · **Players** · **Training** | Squad, Roster, Practice (the tab) |
+| The four doors (DOORS.md, build 179; TOOLS.md, build 194) | **Teams** (the season), **Training** (drills and plans), **Scheduler** (the club's week on its fields) and **Sessions** (the business), each with its own bar: in Training **Home** · **Calendar** · **Drills** · **Messages** · **More**, in the Scheduler **Home** · **Calendar** · **Scheduler** · **Messages** · **More**, in Sessions **Home** · **Calendar** · **Sessions** · **Messages** · **More**; the switch between them is the one button on the title row, which says **Switch to** | Business, Academy, Mode, Tools (as a label), Door (on screen) |
+| A team's own tabs | **Season** · **Players** | Squad, Roster, Practice (the tab), Training (as a tab; it is a door since build 194) |
 | Season's own screens (build 146) | **Stats** · **Minutes** · **Attendance** | Players (the minutes table; Players is the tab), Register |
 | A game's lineup card | **Lineup** | Snapshots (a snapshot is one picture of it, in prose only) |
 | A game's screens | **Subs** · **Track** · **Lineup** · **Stats** · **Live**, in that order, shared from the right (**Log** is Live once the game is over, **Recap** beside it; the pitch is a look at Subs) | Plan (the game's), Pitch (as a tab), Live feed, Match log (as a tab) |

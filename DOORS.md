@@ -11,6 +11,11 @@ the game does not need the bloat of the games going on. The calendars line
 up though. One for the season and games and one for the business/training.
 All under one roof but separated for users' sake.*
 
+*Amended by `TOOLS.md` (the owner, 2026-11-04; build 194): four doors on
+this mechanism (Training and the Scheduler beside Teams and Sessions), and
+one switch, on the title row alone. The row on More, the Sessions tile on
+Club home and the row at the foot of Settings described below came out.*
+
 And the owner's answers the same day:
 
 1. The second door is called **Sessions**.

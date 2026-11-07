@@ -174,7 +174,7 @@ const blocks = html => [...html.matchAll(/<button type="button" class="tg-ev" ([
     A.click({ act: 'schneedsave', tid: 't1' });
     check('— and writes none', JSON.stringify(A.state), before);
     A.ui.view = 'setup'; A.render();
-    check('— Settings offers her the Scheduler, read-only', /data-act="scheduler"/.test(A.rendered()) && /beside everyone else/.test(A.rendered()), true);
+    check('— the Scheduler is a door she has, read-only, on the switch; no tile on Settings (TOOLS.md, build 194)', A.hasDoor('scheduler') + ' ' + /data-act="doors"/.test(A.rendered('#titlebar')) + ' ' + /data-act="scheduler"/.test(A.rendered()), 'true true false');
 
     as('boss'); A.render(); h = A.rendered();
     check('an admin: the board, The term, Rules, Find a time, Coaches and Picture day as tabs', [...h.matchAll(/data-act="pltab" data-k="(\w+)"/g)].map(m => m[1]).join(), 'board,term,rules,find,coach,pic');
@@ -185,8 +185,8 @@ const blocks = html => [...html.matchAll(/<button type="button" class="tg-ev" ([
     check('— at its own address', A.uiToHash(), '#/club/scheduler');
     A.ui.view = 'club'; global.location.hash = '#/club/planner';
     check('— the Planner\'s old address lands here', A.hashToUi() && A.ui.view, 'scheduler');
-    A.render(); A.click({ act: 'navback' });
-    check('— Back is Settings', A.ui.view, 'setup');
+    A.render();
+    check('— a tab\'s own screen in the Scheduler door: no Back (TOOLS.md)', A.upView() + ' ' + /tbback/.test(A.rendered('#titlebar')), 'null false');
     check('— and the word Planner is off the screen', /Planner/.test(A.rendered()), false);
   }
 
