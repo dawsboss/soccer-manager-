@@ -162,7 +162,7 @@ const EXPORTS = `{
   /* stats */
   goalList, score, EVENTS, evOf, evLabel, evCount, evList, possOn, tracked, countsHeading, timeline, shotList, recap, recapNotes, viewRecap, gameMenu, gameHeader, headClock, sheetGameMenu, gameSegments, gameSegOf, openGameScreen, recapLines, seasonTrends, logCard, lineChart, lcReading, lcSay, lcScrub,
   shotTally, possMarkers, possession, subEvents, subGroups, deleteSub,
-  shapeTarget, shapeKeep, shapePresetSlots, plansToCopy, copyPlanFrom,
+  shapeTarget, shapeKeep, shapePresetSlots, plansToCopy, copyPlanFrom, playedBlocks,
   /* actions */
   startClock, pauseClock, endHalf, endGame, putOnField, takeOffField, swap,
   moveSub, subQuiet, applyStaged, movePos, switchTo, subAt, restartMatch,
@@ -171,7 +171,7 @@ const EXPORTS = `{
   publicGame, publicDoc, shareIds, pageAt, shareBase, teamLink, gameLink,
   gameStatus, shirtOf,
   /* AI prompt helper */
-  aiPrompt, aiLabels, aiScrub, AI_TOPICS, sheetAi, aiSlotNames, aiPlanAsk, aiPlanParse,
+  aiPrompt, aiLabels, aiScrub, AI_TOPICS, sheetAi, aiSlotNames, aiPlanAsk, aiPlanParse, aiNamesOn, aiShown,
   /* test club */
   seedSandbox,
   /* bulk import */

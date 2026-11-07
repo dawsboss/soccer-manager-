@@ -204,4 +204,40 @@ console.log('\n--- an AI\'s plan comes back in ---');
   check('a tracker cannot load one', A.planBlocks(A.state.matches.g2).length, 3);
 }
 
+console.log('\n--- names, only when the coach switches them on ---');
+{
+  setup();
+  const g2 = A.state.matches.g2;
+  g2.formation = { name: '1-2-1', size: 4, slots: [
+    { id: 'sGK', label: 'GK', role: 'GK' }, { id: 'sCB', label: 'CB', role: 'DEF' },
+    { id: 'sCM', label: 'CM', role: 'MID' }, { id: 'sST', label: 'ST', role: 'FWD' }] };
+  A.ui.matchId = 'g2';
+  check('off by default', A.aiNamesOn('game'), false);
+  A.dom.node('#sheet').innerHTML = '';
+  A.click({ act: 'aihelp', scope: 'game' });
+  check('the sheet offers the switch, numbers only pressed', /data-act="ainames" data-on="0" aria-current="true"/.test(A.dom.rendered('#sheet')), true);
+  A.click({ act: 'ainames', on: '1' });
+  check('a tap switches names on', A.aiNamesOn('game'), true);
+  check('and the sheet says so', A.dom.rendered('#sheet').includes('first names, which go to the AI company'), true);
+  const txt = A.aiPrompt('game', 'plan');
+  check('first names go beside the label', txt.includes('#8 (Mia): my target 40 min'), true);
+  check('pairings too', txt.includes('Play well together: #8 (Mia) & #4 (Rosa)'), true);
+  const surnames = NAMES.map(n => n.split(' ')[1]).filter(w => new RegExp(`(^|[^\\p{L}])${w}(?![\\p{L}])`, 'u').test(txt));
+  check('never a surname', surnames.join(', '), '');
+  check('never a note or a family', txt.includes('ankle') || txt.includes('mum'), false);
+  check('the PLAN lines are asked for by number alone', txt.includes('with no names on those lines'), true);
+  check('a reply with numbers on the PLAN lines still loads', A.aiPlanParse(A.team(), g2, 'PLAN\n0:00 GK=#1 (Sam) CB=#4 (Rosa) CM=#8 ST=#7').problems.join('; '), '');
+  const r = A.aiScrub('Rosa Delgado at CB, Mia and Kowalski up top', 'game');
+  check('the scrub keeps first names and takes surnames', r.text, '#4 (Rosa) at CB, Mia and #8 (Mia) up top');
+  check('the parents\' note may use first names', A.aiPrompt('game', 'parents').includes('Refer to players by first name'), true);
+  check('the club prompt never has names', A.aiNamesOn('club'), false);
+  A.click({ act: 'ainames', on: '0' });
+  check('and back off', A.aiPrompt('game', 'plan').includes('Mia'), false);
+  A.ui.aiNames = true;
+  A.me = { uid: 'trk', name: 'T' };
+  A.click({ act: 'ainames', on: '0' });
+  check('a tracker\'s tap does nothing', A.ui.aiNames, true);
+  A.ui.aiNames = false;
+}
+
 H.summary('the AI prompt helper');
