@@ -171,7 +171,7 @@ const EXPORTS = `{
   publicGame, publicDoc, shareIds, pageAt, shareBase, teamLink, gameLink,
   gameStatus, shirtOf,
   /* AI prompt helper */
-  aiPrompt, aiLabels, aiScrub, AI_TOPICS, sheetAi, aiSlotNames, aiPlanAsk, aiPlanParse,
+  aiPrompt, aiLabels, aiScrub, AI_TOPICS, sheetAi, aiSlotNames, aiPlanAsk, aiPlanParse, aiNamesOn, aiShown,
   /* test club */
   seedSandbox,
   /* bulk import */

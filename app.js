@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '193';
+const BUILD = '194';
 const BUILT = '2026-10-25';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -10730,7 +10730,8 @@ function viewPlan() {
       <p class="muted" style="margin-top:0">Who starts where, then who is where after each change.${infoBtn('snapshots')}</p>
       <button class="btn wide" data-act="snapstart">Plan kick-off</button>
       ${copyPlanBtn(t, m)}
-      <p class="muted" style="margin:12px 0 0">Or let the app draft one from your target minutes, or paste back an answer from <b>Ask an AI</b>, and change what you like.</p></div>`;
+      <button class="btn quiet wide" data-act="aihelp" data-scope="game" style="margin-top:8px">Ask an AI for a lineup</button>
+      <p class="muted" style="margin:12px 0 0">Or let the app draft one from your target minutes. Whatever you start from, you can change it.</p></div>`;
   } else {
     const cur = blocks.find(b => b.start === ui.snapAt) || blocks[0];
     const i = blocks.indexOf(cur), prev = i ? blocks[i - 1] : null;
@@ -24332,6 +24333,25 @@ function aiLabels(t) {
   return out;
 }
 
+/* Names in the prompt are the coach's call (the owner, 2026-11-07): off by
+   default, a switch on the sheet, and on this phone for this session only, so
+   a reload goes back to numbers and sending names is always a choice she made
+   today. Even switched on it is the first name beside the label, never a
+   surname, a note or anything a family wrote: enough for her to read the
+   answer without a crib sheet, and nothing the plan needs. The label stays in
+   front because the PLAN lines are read back by it (aiPlanParse() never reads
+   a name), and two children can share a first name. The club prompt has no
+   labels, so it never carries names. */
+function aiNamesOn(scope) { return scope !== 'club' && !!ui.aiNames; }
+function aiFirst(p) { return String((p && p.name) || '').trim().split(/\s+/)[0] || ''; }
+function aiShown(t, names) {
+  const lab = aiLabels(t);
+  if (!names) return lab;
+  const out = {};
+  for (const p of players(t)) { const f = aiFirst(p); out[p.id] = f ? `${lab[p.id]} (${f})` : lab[p.id]; }
+  return out;
+}
+
 function aiFormat(m) {
   return `${m.onFieldCount || 11}v${m.onFieldCount || 11}, ${m.periodCount || 2} × ${m.periodMinutes || 40} min`;
 }
@@ -24470,17 +24490,21 @@ const AI_TOPICS = {
   ]
 };
 
-function aiPrompt(scope, topic, ideas) {
+function aiPrompt(scope, topic, ideas, names = aiNamesOn(scope)) {
   const list = AI_TOPICS[scope];
-  const [, , ask] = list.find(x => x[0] === topic) || list[0];
+  let [, , ask] = list.find(x => x[0] === topic) || list[0];
   const t = team(), m = match();
+  names = names && scope !== 'club';
   const who = scope === 'club' ? 'I run a youth soccer club' : 'I coach a youth soccer team';
-  const legend = 'Players are identified by shirt number only (or a letter). Minutes are rounded.';
+  const legend = names ? 'Players are identified by shirt number (or a letter) with their first name in brackets. Minutes are rounded.'
+    : 'Players are identified by shirt number only (or a letter). Minutes are rounded.';
+  if (names) ask = ask.replace('Refer to players only by shirt number so I can fill in names', 'Refer to players by first name');
+  const lab = scope === 'club' ? null : aiShown(t, names);
   let facts;
   if (scope === 'club') facts = `TEAMS\n${aiClubFacts()}`;
-  else if (scope === 'game') facts = topic === 'plan' ? aiPlanFacts(t, m, aiLabels(t)) : aiGameFacts(t, m, aiLabels(t));
+  else if (scope === 'game') facts = topic === 'plan' ? aiPlanFacts(t, m, lab) : aiGameFacts(t, m, lab);
   else {
-    facts = aiSeasonFacts(t, aiLabels(t));
+    facts = aiSeasonFacts(t, lab);
     const next = teamMatches(t.id).filter(x => gameStatus(x) === 'upcoming').pop();
     if (topic === 'next' && next) facts += `\n\nNEXT GAME: ${next.date || 'no date'} vs ${next.opponent || 'TBC'}, ${aiFormat(next)}`;
     // the library, so the AI suggests drills the coach can open in the app rather than inventing them
@@ -24492,7 +24516,7 @@ function aiPrompt(scope, topic, ideas) {
     }
   }
   const mine = String(ideas || '').trim();
-  const back = scope === 'game' && topic === 'plan' ? '\n\n' + aiPlanAsk(m) : '';
+  const back = scope === 'game' && topic === 'plan' ? '\n\n' + aiPlanAsk(m, names) : '';
   return `${who}. ${legend}\n\n${facts}${mine ? `\n\nMY IDEAS\n${mine}` : ''}\n\n${ask}${back}`;
 }
 
@@ -24512,11 +24536,11 @@ function aiSlotNames(m) {
   }
   return out;
 }
-function aiPlanAsk(m) {
+function aiPlanAsk(m, withNames) {
   const names = Object.values(aiSlotNames(m));
   if (!names.length) return '';
   const per = m.periodMinutes || 40;
-  return `So I can load it straight into my app, end your answer with the plan again in exactly this form and nothing else on those lines: a line saying PLAN, then one line per change starting at kick-off, each with the game-clock time (minutes:seconds from kick-off, so the ${halfName(m, 2).toLowerCase()} starts at ${per}:00) and then every position with who plays it, the whole lineup each time:\n`
+  return `So I can load it straight into my app, end your answer with the plan again in exactly this form and nothing else on those lines: a line saying PLAN, then one line per change starting at kick-off, each with the game-clock time (minutes:seconds from kick-off, so the ${halfName(m, 2).toLowerCase()} starts at ${per}:00) and then every position with who plays it, the whole lineup each time${withNames ? ', using the shirt number or letter alone (#7 or Player A), with no names on those lines' : ''}:\n`
     + `PLAN\n0:00 ${names.map((n, i) => `${n}=${i === 0 ? '#1' : '…'}`).join(' ')}\n10:00 ${names.map(n => `${n}=…`).join(' ')}`;
 }
 /* Read the pasted answer. Strict about the lines it recognises — a time, then
@@ -24569,15 +24593,18 @@ function aiPlanParse(t, m, text) {
    "#7 Fitzgerald". At club level a label would not say which team, so a name
    there becomes "a player". Over-matching is the safe way round here: a word
    that happens to be a name ("Page") is replaced rather than let through. */
-function aiScrub(text, scope) {
-  const pool = scope === 'club' ? teams().map(t => [t, null]) : [[team(), aiLabels(team())]];
+function aiScrub(text, scope, names = aiNamesOn(scope)) {
+  names = names && scope !== 'club';
+  const pool = scope === 'club' ? teams().map(t => [t, null]) : [[team(), aiShown(team(), names)]];
   const subs = [];
   for (const [t, lab] of pool) for (const p of players(t)) {
     const to = lab ? lab[p.id] : 'a player';
     const full = String(p.name || '').trim();
     if (!full) continue;
-    subs.push([full, to]);
-    for (const w of full.split(/\s+/)) if (w.length >= 2) subs.push([w, to]);
+    const words = full.split(/\s+/);
+    // with names switched on a first name may go as she typed it; the rest of the name still never does
+    if (!names || words.length > 1) subs.push([full, to]);
+    words.forEach((w, i) => { if (w.length >= 2 && !(names && i === 0)) subs.push([w, to]); });
   }
   return replaceNames(text, subs);
 }
@@ -24635,14 +24662,20 @@ function sheetAi(scope, topic) {
     `<button class="opt" type="button" style="width:auto" data-act="aitopic" data-k="${k}" aria-current="${k === tp}">${esc(label)}</button>`).join('')}</div>
     ${tp === 'plan' ? `<label class="field"><span>Your ideas — minutes, positions, who plays when</span>
       <textarea id="aiIdeas" rows="4" placeholder="#7 and #9 split up top. #4 plays the whole first half at CB. Keep #10 fresh for the last 15.">${esc(ideas)}</textarea></label>
-      <p class="muted" style="margin-top:-6px">Names are fine here: they are swapped for shirt numbers before anything is copied. Your snapshots and targets from the Lineup tab are already in the prompt.</p>` : ''}
+      <p class="muted" style="margin-top:-6px">Names are fine here: ${aiNamesOn(scope) ? 'first names go as you typed them, and surnames are swapped for shirt numbers' : 'they are swapped for shirt numbers'} before anything is copied. Your snapshots and targets from the Lineup tab are already in the prompt.</p>` : ''}
+    ${tp === 'plan' && scope === 'game' && match() && !((match().formation || {}).slots || []).length ? `<p class="muted">Pick a shape for this game first, and the AI's lineup can be loaded straight onto it.</p>` : ''}
+    ${scope === 'club' ? '' : `<div class="field"><span>Players in the prompt</span><div class="row" style="gap:6px">
+      <button class="opt" type="button" style="width:auto" data-act="ainames" data-on="0" aria-current="${!aiNamesOn(scope)}">Shirt numbers only</button>
+      <button class="opt" type="button" style="width:auto" data-act="ainames" data-on="1" aria-current="${aiNamesOn(scope)}">Numbers and first names</button></div></div>`}
     <label class="field"><span>Prompt — edit or add to it before copying</span>
       <textarea id="aiPrompt" rows="12" style="font-size:14px">${esc(aiPrompt(scope, tp, ideas))}</textarea></label>
     <button class="btn wide" data-act="aicopy">Copy prompt</button>
     <div class="muted" style="margin:10px 0 4px">Or copy it and open</div>
     <div class="row" style="gap:6px">${Object.entries(AI_SITES).map(([k, [label]]) =>
       `<button class="btn quiet sm" style="flex:1" data-act="aiopen" data-k="${k}">${label}</button>`).join('')}</div>
-    <p class="muted" style="margin-bottom:0">Players appear as shirt numbers. No names, notes or photos are included, and any name you type is swapped for a number when you copy.</p>
+    <p class="muted" style="margin-bottom:0">${aiNamesOn(scope)
+      ? 'Players appear as shirt numbers with their first names, which go to the AI company when you paste. No surnames, notes or photos are included. Back to numbers only when this page reloads.'
+      : 'Players appear as shirt numbers. No names, notes or photos are included, and any name you type is swapped for a number when you copy.'}</p>
     ${tp === 'plan' && scope === 'game' && match() && ((match().formation || {}).slots || []).length ? `<h3 style="margin:18px 0 6px">Bring the answer back</h3>
       <p class="muted" style="margin-top:0">Paste the AI's whole reply. The app reads the lines under <b>PLAN</b> and turns them into snapshots you can change before locking in.</p>
       <label class="field"><span>The AI's answer</span><textarea id="aiAnswer" rows="6" style="font-size:14px" placeholder="PLAN&#10;0:00 GK=#1 LB=#4 …"></textarea></label>
@@ -27006,6 +27039,11 @@ function onAct(e) {
     sheetAi(sc, sc === 'game' && gameStatus(m) === 'upcoming' ? 'plan' : sc === 'game' ? 'review' : null); return;
   }
   if (a === 'aitopic') { if (ui.ai) sheetAi(ui.ai.scope, d.k); return; }
+  if (a === 'ainames') {
+    // the same people who may open the sheet, who already see every name on screen
+    if (!ui.ai || ui.ai.scope === 'club' || restricted() || !t) return;
+    ui.aiNames = d.on === '1'; sheetAi(ui.ai.scope, ui.ai.topic); return;
+  }
   if (a === 'aicopy') { const r = aiFinal(); aiCopy(r.text, r.n); return; }
   if (a === 'aiimport') {
     if (!m || restricted()) return;
