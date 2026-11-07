@@ -356,7 +356,7 @@ console.log('\n--- a plan copied from another game ---');
   const g = setup();
   A.state.matches.g0 = other();
   let h = html();
-  check('an empty plan offers the plan of another game', /data-act="copyplan"[^>]*>Copy the plan from another game</.test(h), true);
+  check('an empty plan offers the plan of another game', /data-act="copyplan"[^>]*>Copy a lineup from another game</.test(h), true);
   A.click({ act: 'copyplan' });
   check('the sheet lists this team\'s other games with a plan, with the game and its shape', open() && /data-act="copyplanfrom" data-id="g0"/.test(sheet()) && /v Lakeside/.test(sheet()) && /1-2-1/.test(sheet()) && /2 snapshots/.test(sheet()) && !/data-id="g1"/.test(sheet()), true);
   A.state.matches.g1.out = { p2: true };   // Mia is out for this one
@@ -366,10 +366,19 @@ console.log('\n--- a plan copied from another game ---');
   check('— ids agree with the spots', coherent(g()), true);
   check('— this game\'s own: not locked, nothing done, and said', !g().plan.locked && !g().planDone && !open() && A.lastToast(), 'Plan copied from v Lakeside — Mia left out');
   check('— the other game keeps its plan whole', A.planBlocks(A.state.matches.g0)[0].ids.length + ' ' + !!A.state.matches.g0.plan.locked, '4 true');
-  check('and the offer is gone once there is a plan', /data-act="copyplan"/.test(html()), false);
+  check('a plan there still offers a copy, beside Clear plan', /data-act="copyplan">Copy from a game</.test(html()), true);
+  A.planBlocks(g())[0].assign.sRB = 'p4';
+  global.confirm = () => false;
+  A.click({ act: 'copyplanfrom', id: 'g0' });
+  check('over a plan it asks first, and no keeps hers', A.planBlocks(g())[0].assign.sRB, 'p4');
+  global.confirm = () => true;
+  A.click({ act: 'copyplanfrom', id: 'g0' });
+  check('— and yes replaces it', A.planBlocks(g())[0].assign.sRB, undefined);
+  g().plan.locked = { at: 1 };
   A.planBlocks(g())[0].assign.sRB = 'p4';
   A.click({ act: 'copyplanfrom', id: 'g0' });
-  check('a tap that reaches the handler never writes over a plan', A.planBlocks(g())[0].assign.sRB + ' ' + /clear it first/.test(A.lastToast()), 'p4 true');
+  check('a locked plan is never written over', A.planBlocks(g())[0].assign.sRB, 'p4');
+  check('— and offers no copy', /data-act="copyplan"/.test(html()), false);
 
   const g2 = setup({ formation: null });
   A.state.matches.g0 = other();
@@ -395,6 +404,30 @@ console.log('\n--- a plan copied from another game ---');
   A.state.matches.g0 = { ...other(), formation: null, plan: { blocks: [{ start: 0, ids: ['p5', 'p1', 'p2', 'p3'] }, { start: 2400, ids: ['p5', 'p4', 'p2', 'p3'] }] } };
   A.click({ act: 'copyplanfrom', id: 'g0' });
   check('a plan drafted with no shape comes over as who, not where', A.planBlocks(g5()).map(b => (b.ids || []).join()), ['p5,p1,p2,p3', 'p5,p4,p2,p3']);
+
+  /* A game played with no plan still has a lineup: the one on the pitch. */
+  const g6 = setup();
+  const per = 40 * 60 * 1000, k0 = T0 - 7 * 86400000;
+  A.state.matches.g0 = { ...other(), plan: null, planDone: null,
+    periods: { 0: { half: 1, start: k0, end: k0 + per + 90000 }, 1: { half: 2, start: k0 + per + 600000, end: k0 + 2 * per + 600000 } },
+    stints: {
+      a: { pid: 'p5', on: 0, off: 4890, slot: 'sGK' }, b: { pid: 'p1', on: 0, off: 1200, slot: 'sLB' },
+      c: { pid: 'p2', on: 0, off: 4890, slot: 'sRB' }, d: { pid: 'p3', on: 0, off: 2790, slot: 'sST' },
+      e: { pid: 'p4', on: 1201, off: 4890, slot: 'sLB' },
+      // a change 5 minutes into the 2nd half, after a 1:30 stoppage in the 1st: 2490s played, 45:00 on the half's clock
+      f: { pid: 'p1', on: 2790, off: 4890, slot: 'sST' }
+    } };
+  check('a played game is offered as it was played', A.plansToCopy(A.team(), g6()).map(c => c.id), ['g0~played']);
+  check('— a snapshot at kick-off and at each change, on the half\'s own clock', A.playedBlocks(A.state.matches.g0).map(b => b.start), [0, 1200, 2700]);
+  check('— with who was where', Object.entries(A.playedBlocks(A.state.matches.g0)[2].assign).sort().join(' '), 'sGK,p5 sLB,p4 sRB,p2 sST,p1');
+  A.click({ act: 'copyplan' });
+  check('the sheet says which', /v Lakeside · as it was played/.test(sheet()) && /3 snapshots/.test(sheet()), true);
+  A.click({ act: 'copyplanmode', ko: '1' });
+  check('Kick-off only counts one', A.ui.copyKO && /1 snapshot</.test(sheet()), true);
+  A.click({ act: 'copyplanfrom', id: 'g0~played' });
+  check('— and copies who started where, alone', A.planBlocks(g6()).map(b => b.start + ':' + Object.entries(b.assign).sort().join(' ')), ['0:sGK,p5 sLB,p1 sRB,p2 sST,p3']);
+  check('— said', /^Kick-off lineup copied from v Lakeside/.test(A.lastToast()), true);
+  A.ui.copyKO = false;
 }
 
 H.summary('the Plan tab\'s snapshots');
