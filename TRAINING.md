@@ -5,7 +5,7 @@ rules have to be right first. Training adds the first new root node since
 invites. It's also the first data here that belongs to a *person* rather than to
 a club, so a mistake would be expensive to undo.
 
-Built so far (see *Build order*): the built-in drill library (`drills.js`, 141
+Built so far (see *Build order*): the built-in drill library (`drills.js`, 146
 drills, each with an animated diagram, and a guide to what each of nine
 positions is for), the renderer that draws those diagrams
 (`drill-diagram.js`), the Practice tab that shows them, a team's age,
@@ -133,7 +133,7 @@ something a U6 coach opens and finds empty.
 
 ### Built-in drills: drawn, and they move
 
-Every built-in drill has a diagram, and 139 of the 141 animate: players run, the
+Every built-in drill has a diagram, and 144 of the 146 animate: players run, the
 ball travels, and a caption says what each step is. The two that don't move
 (juggling and the cool-down circle) are layouts.
 

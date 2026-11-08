@@ -903,6 +903,58 @@
       shapes: ['2-5-1', '3-3-2', '3-2-3', '2-3-1', '4-4-2', '4-3-3', '3-5-2', '1-2-1']
     },
 
+    {
+      id: 'islands', v: 1, name: 'Islands', type: 'warmup',
+      summary: 'Pass between little islands of cones while a shark hunts the ball. You can only take a pass standing on an island, and only one player fits on each.',
+      ages: [6, 10], level: 1, players: { min: 5, best: 10, max: 15 }, gk: 0, minutes: [8, 12], intensity: 2,
+      space: [20, 20], kit: { balls: 2, cones: 28, bibs: 2 },
+      setupMins: 5, adults: 1, indoor: true, groups: ['small'], involvement: 3, competitive: true,
+      positions: ALL, skills: ['passing', 'movement', 'scanning', 'first-touch'], principles: ['support', 'width'],
+      moments: ['attack'], physical: [],
+      setup: 'A 20 × 20 yd square with six islands spread out inside it: little squares about two big steps across, four cones each (hoops work too). Four passers with one ball, and one shark in a bib. Make a second square if you have ten.',
+      how: [
+        'The passers keep the ball away from the shark. You can only take a pass while you are standing on an island.',
+        'One player per island. There are more islands than passers, so there is always an empty one to run to.',
+        'Pass, then run to a new island. Count the passes out loud: five in a row is a point.',
+        'When the shark touches the ball, whoever had it last becomes the shark.'
+      ],
+      points: [
+        'Get away from the ball to get the ball. The island right next to the passer is usually the wrong one.',
+        'Pick an island where the shark is not standing between you and the ball.',
+        'Look up before the ball comes, so you already know where it goes next.'
+      ],
+      questions: [
+        'Which island was the best one to go to? Why that one?',
+        'What did you do when the shark stood between you and the ball?'
+      ],
+      mistakes: [
+        'Two players racing to the same island: whoever gets there first keeps it, and the other finds a new one.',
+        'Players staying on their island and waiting: everyone moves after every pass, not only the passer.'
+      ],
+      why: 'Young players run to the ball because that is where the fun is, and then nobody is left to pass to. Here the only place to get the ball is an island away from it, with nobody else on it, so spreading out is how the game is played rather than something the coach keeps shouting.',
+      easier: ['No shark to start: pass, then run to an empty island.', 'Bigger islands closer together, and as many touches as she likes.'],
+      harder: ['Two touches: one to stop it, one to pass it.', 'Take an island away every two minutes, or add a second shark.'],
+      diagram: {
+        area: [20, 20], mark: 'grid',
+        cones: [
+          [0, 0], [20, 0], [0, 20], [20, 20],
+          [1.5, 1.5], [4.5, 1.5], [1.5, 4.5], [4.5, 4.5], [8.5, 2.5], [11.5, 2.5], [8.5, 5.5], [11.5, 5.5],
+          [15.5, 1.5], [18.5, 1.5], [15.5, 4.5], [18.5, 4.5], [1.5, 15.5], [4.5, 15.5], [1.5, 18.5], [4.5, 18.5],
+          [8.5, 14.5], [11.5, 14.5], [8.5, 17.5], [11.5, 17.5], [15.5, 15.5], [18.5, 15.5], [15.5, 18.5], [18.5, 18.5]
+        ],
+        zones: [[1.5, 1.5, 3, 3], [8.5, 2.5, 3, 3], [15.5, 1.5, 3, 3], [1.5, 15.5, 3, 3], [8.5, 14.5, 3, 3], [15.5, 15.5, 3, 3]],
+        players: { A1: [3, 3], A2: [10, 4], A3: [10, 16], A4: [17, 17], D1: [8, 9] },
+        ball: 'A1',
+        frames: [
+          ['D1-6.5,3.6', 'A3-3,17', '# The shark blocks one pass: find another island'],
+          ['A1>A3', 'A1-17,3', 'D1-5,11', '# Pass, then run to a new island'],
+          ['A3>A4', 'A2-3,3', 'D1-11,13', '# One on each island, so nobody is crowded'],
+          ['A4>A1', 'A3-10,16', 'D1-13,10', '# Three in a row… five is a point']
+        ]
+      },
+      signals: ['possession'], goesWith: ['rondo-4v1', 'spread-out-game', 'the-bubble'], tags: ['young', 'fun', 'spacing']
+    },
+
     /* ---------------- technique ---------------- */
 
     {
@@ -4223,6 +4275,176 @@
       shapes: ['2-5-1', '2-3-1', '3-2-1', '4-3-3', '3-2-3', '1-2-1']
     },
 
+    /* Three jobs in a two-back shape, drawn the way a 2-5-1 that bunches
+       needs them: the two backs sliding to the side of the ball, the centre
+       mid as the defender in front of them rather than one more player
+       chasing it, and the five spread across the pitch in lanes. Each is a
+       place to stand that doesn't depend on being near the ball, which is
+       what a team that swarms is missing. */
+
+    {
+      id: 'two-backs-one-rope', v: 1, name: 'Two backs, one rope', type: 'position',
+      summary: 'The two backs slide across together as the ball moves, as if a rope joined them: the near one to the side of the ball, the other sweeping in behind her through the middle.',
+      ages: [9, 14], level: 1, players: { min: 5, best: 7, max: 10 }, gk: 1, minutes: [10, 15], intensity: 2,
+      space: [50, 36], kit: { balls: 8, goals: 1, bibs: 3 },
+      setupMins: 2, adults: 1, indoor: false, groups: ['small'], involvement: 2, competitive: true,
+      positions: ['Back', 'GK'], skills: ['shape', 'angles', 'communication', '1v1-defend'], principles: ['cover', 'pressure', 'balance', 'compactness'],
+      moments: ['defend'], physical: [],
+      setup: 'Half your 9v9 pitch, full width, with your goal and keeper. The two backs start about 20 yd out, side by side. Three players in bibs spread along halfway: one on each touchline and one in the middle, with the ball. Swap in a new pair of backs every few minutes.',
+      how: [
+        'The three pass it slowly along halfway. Every time the ball moves, the backs move before it arrives.',
+        'Ball on a wing: the back on that side goes towards it and stands between the ball and our goal. Her partner sweeps across behind her into the middle, a few steps behind and a few steps inside.',
+        'Ball in the middle: the nearer back steps up to it, and the other drops in behind her. They are never level.',
+        'Then live: on "Go!" whoever has the ball attacks the goal on her own. Once the backs win most of those, the nearest bib joins her for 2v2. The backs score by winning it and dribbling over halfway.'
+      ],
+      points: [
+        'One goes to the side of the ball. The other sweeps behind her through the middle. Never both to the ball.',
+        'The rope is about ten big steps long. If it stretches, someone has not moved; if you are next to each other, it has gone slack.',
+        'Move while the ball is travelling, not when it arrives.',
+        'Talk: "Mine!" from the one who goes, "I\'m behind you!" from the sweeper. The keeper tells you both where to be.'
+      ],
+      questions: [
+        'Ball on our left wing: where is the right back, and why there?',
+        'Why should the two of you never stand level, side by side?',
+        'Which side of the pitch is empty when the ball is on a wing? Why is that all right?'
+      ],
+      mistakes: [
+        'Both backs going to the ball: one pass past them and the keeper is on her own. One goes, one sweeps.',
+        'The far back staying out on her own side to guard nobody: the space that matters is the middle, in front of goal.',
+        'Standing level: one ball through the gap beats both. The sweeper stands a few steps deeper.'
+      ],
+      why: 'With only two at the back, they can\'t guard the whole width, and they don\'t need to: the ball is only ever on one side at a time. Sliding across together, one to the ball and one sweeping behind her, keeps the middle shut until the wingers get back to help.',
+      easier: ['Walk it: the coach carries the ball along halfway and stops at each spot while the backs find theirs.', 'Two bibs only, one on each touchline, so every pass is a switch.'],
+      harder: ['The bibs may play a ball in behind as soon as the backs stand level or the rope stretches.', 'Add your wingers: the one on the ball side drops in beside the near back, and the sweeper can tuck further in.'],
+      diagram: {
+        area: [50, 36], mark: 'none',
+        goals: [[25, 36, 'big', 'n']],
+        players: { K: [25, 34.5], A1: [19, 22], A2: [31, 22], D1: [3, 5], D2: [25, 3], D3: [47, 5] },
+        ball: 'D2',
+        frames: [
+          ['D2>D1', 'A1-12,19', 'A2-21,25', 'K-23,34.5', '# Ball on our left: one to it, one sweeps behind'],
+          ['D1>D2', 'A1-21,19', 'A2-28,24', 'K-25,34.5', '# Back to the middle: slide back together'],
+          ['D2>D3', 'A2-38,19', 'A1-29,25', 'K-27,34.5', '# Switched: the other back goes, the rope swings'],
+          ['D3~41,12', 'A2-41,17', '# "Go!" The near back holds her up…'],
+          ['D3~34,19', 'A1*D3', '# …and when she cuts inside, the sweeper is there'],
+          ['A1~31,1', '# Win it, and dribble out over halfway']
+        ]
+      },
+      signals: ['conceding', 'shots-against'], goesWith: ['hold-until-help', 'forward-defender', 'shape-2-5-1'], tags: ['spacing', 'positional', 'defending'],
+      shapes: ['2-5-1', '2-3-1']
+    },
+
+    {
+      id: 'forward-defender', v: 1, name: 'The forward defender', type: 'position',
+      summary: 'The centre mid in a 2-5-1 as a defender in front of the two backs: she steps to a ball coming through the middle, leaves the wings to others, and is the first pass when we win it.',
+      ages: [9, 14], level: 2, players: { min: 6, best: 8, max: 12 }, gk: 1, minutes: [12, 15], intensity: 2,
+      space: [50, 36], kit: { balls: 10, cones: 8, goals: 1, bibs: 3 },
+      setupMins: 3, adults: 1, indoor: false, groups: ['small'], involvement: 2, competitive: true,
+      positions: ['Mid', 'Back', 'GK'], skills: ['shape', 'angles', 'pressing', 'scanning', 'passing'], principles: ['pressure', 'cover', 'compactness', 'balance', 'delay'],
+      moments: ['defend', 'toAttack'], physical: [],
+      setup: 'Half your 9v9 pitch, full width, with your goal and keeper, your two backs and your centre mid. Four cones mark her spot: a box about 20 yd wide in front of the backs. Two gates on halfway, one each side. Three players in bibs start on halfway, one on each touchline and one in the middle; the coach has the balls.',
+      how: [
+        'The coach plays a ball to one of the three, and they attack our goal: three against our two backs, our centre mid and the keeper.',
+        'Ball coming through the middle: she steps out of the top of her box to meet it and slows it down. The backs stay behind her.',
+        'Ball on a wing: she doesn\'t go. The near back goes to the side of the ball, and she slides to that side of her box to stand in the pass back inside. She never leaves her box out of the sides.',
+        'When we win it, she shows for the first pass and plays it forward through a gate: a point for us. A goal is a point for them. Swap the centre mid every few goes.'
+      ],
+      points: [
+        'Your spot is in front of the two backs, in the middle. Leave it only to meet a ball coming straight at you.',
+        'Ball in the middle: step to it and slow it down. Don\'t dive in; the backs are behind you.',
+        'Ball on the wing: let the wide players and the near back take it. Your job is the pass back into the middle.',
+        'We win it: you are the first pass. Show for it, then play forward.'
+      ],
+      questions: [
+        'When should you go to the ball, and when should you stay?',
+        'The ball was out on a wing: which pass were you stopping?',
+        'Who is behind you when you step up?'
+      ],
+      mistakes: [
+        'Chasing the ball out to the wing: now the middle in front of goal is empty. She goes only to a ball in the middle.',
+        'Dropping into the back line beside the backs: she is a defender in front of them, not a third back. Stay a few steps ahead.'
+      ],
+      why: 'With only two at the back, the space just in front of them is where most goals start: a run through the middle that nobody steps out to meet. A centre mid who stays in front of the backs is the first defender the other team meets, and because she stays, the rest of the five can go forward knowing someone is home.',
+      easier: ['Walk it: the coach carries the ball to the middle, then each wing, and the three find their spots.', 'Two attackers only, both in the middle.'],
+      harder: ['A fourth attacker who drops into the space in front of the backs to receive.', 'Add your two inside mids pressing in front of her, so she has to read where the pass is going.'],
+      diagram: {
+        area: [50, 36], mark: 'none',
+        goals: [[25, 36, 'big', 'n']],
+        cones: [[8, 0], [13, 0], [37, 0], [42, 0], [15, 13], [35, 13], [15, 23], [35, 23]],
+        zones: [[15, 13, 20, 10, 'HER SPOT']],
+        players: { K: [25, 34.5], A1: [19, 27], A2: [31, 27], A3: [25, 18], D1: [4, 5], D2: [25, 4], D3: [46, 5] },
+        ball: 'D2',
+        frames: [
+          ['D2~24,7.5', 'A3-24,11', '# Through the middle: she steps out to meet it'],
+          ['D2>D1', 'D2-30,16.5', 'A3-18,14.8', 'A1-11,21', 'A2-21,27', '# Wide: the back goes, and she guards inside'],
+          ['D1~6,13', 'A1-8,17', '# The near back holds her up on the wing'],
+          ['D1>17,14.6', 'A3*', '# The pass back inside: cut out'],
+          ['A3>10.5,0.5', '# Won it: her first pass goes forward']
+        ]
+      },
+      signals: ['shots-against', 'conceding'], goesWith: ['two-backs-one-rope', 'five-lanes', 'holding-midfielder-screen'], tags: ['spacing', 'positional', 'defending'],
+      shapes: ['2-5-1', '2-3-1']
+    },
+
+    {
+      id: 'five-lanes', v: 1, name: 'Five lanes', type: 'position',
+      summary: 'Where the five midfielders in a 2-5-1 go: one in each lane across the pitch when we have the ball, and back down the same lane when we lose it, so the wingers end up beside the two backs.',
+      ages: [9, 14], level: 1, players: { min: 8, best: 12, max: 16 }, gk: 1, minutes: [12, 18], intensity: 2,
+      space: [50, 55], kit: { balls: 6, cones: 20, goals: 1, bibs: 4 },
+      setupMins: 5, adults: 1, indoor: false, groups: ['squad'], involvement: 2, competitive: true,
+      positions: ALL, skills: ['shape', 'movement', 'passing', 'scanning'], principles: ['width', 'support', 'balance', 'compactness'],
+      moments: ['attack', 'toDefend', 'defend'], physical: [],
+      setup: 'Two-thirds of your 9v9 pitch, full width, with your goal and keeper. Four lines of cones, a cone every ten yards, run up the pitch and split it into five lanes about ten yards wide: a lane on each touchline for the wingers, one either side of the middle for the left and right centre mids, and the middle lane for the centre mid. The team in its 2-5-1; three or four players in bibs (or coaches) are "them".',
+      how: [
+        'Walk it first. The keeper rolls it to a back and the five spread out: one in each lane. Count it out loud, left to right: "one, two, three, four, five."',
+        'Pass it round slowly. Nobody leaves her lane to fetch the ball; she moves up or down inside it until the passer can see her. The centre mid stays behind the ball.',
+        'On "Theirs!" the bibs take the ball, and everyone runs back down her own lane. The wingers keep going until they are beside the two backs; the three in the middle stop in front of them.',
+        'Then play it live against the bibs. Every so often the coach calls "Lanes!" and everyone freezes: a point for each lane with exactly one midfielder in it. Five is perfect.'
+      ],
+      points: [
+        'One in each lane. Two in a lane means one pass has gone.',
+        'Wingers, stay out by the touchline: the wider you are, the more room the middle has.',
+        'Don\'t make a flat line. The centre mid deepest, the inside mids a little higher, the wingers highest, so every pass has an angle.',
+        'Lose it? Straight back down your own lane. The wingers go furthest, all the way back beside the backs.'
+      ],
+      questions: [
+        'Which lane is yours? What do you do in it when we have the ball, and when they do?',
+        'Two of you were in one lane: who should have moved, and where to?',
+        'Wingers, where do you finish when they have the ball?'
+      ],
+      mistakes: [
+        'Everyone drifting into the ball\'s lane: freeze, and have each player point to her lane and walk back to it.',
+        'The five standing in a flat line across the pitch: stagger them, so passes can go forward as well as sideways.'
+      ],
+      why: 'In a 2-5-1 the five midfielders are most of the team, and when they bunch, the whole team bunches. A lane gives each of them a place to be that doesn\'t depend on where the ball is: spread across the pitch with it, and back down the same line without it, which is what puts the wingers beside the backs and keeps the middle full.',
+      easier: ['Walk it only: the coach carries the ball to different places and the five move in their lanes.', 'Three lanes instead of five, left, middle and right, for a team just starting out.'],
+      harder: ['A player may leave her lane only if a teammate fills it straight away.', 'Two touches each, so the ball moves before the bibs can get across.'],
+      diagram: {
+        area: [50, 55], mark: 'none',
+        goals: [[25, 55, 'big', 'n']],
+        zones: [[0, 0, 10, 55], [40, 0, 10, 55]],
+        lines: [[20, 0, 20, 55], [30, 0, 30, 55]],
+        labels: [[5, 2.1, 'WING'], [15, 2.1, 'INSIDE'], [25, 2.1, 'MIDDLE'], [35, 2.1, 'INSIDE'], [45, 2.1, 'WING']],
+        players: {
+          K: [25, 53], A1: [17, 46], A2: [33, 46], A3: [14, 32], A4: [21, 33], A5: [25, 38], A6: [29, 32], A7: [36, 31],
+          A8: [25, 16], D1: [25, 27], D2: [15, 21], D3: [37, 20]
+        },
+        ball: 'A5',
+        frames: [
+          ['A3-5,25', 'A4-15,31', 'A6-35,29', 'A7-45,23', 'A8-25,12', '# Spread out: one in each lane'],
+          ['A5>A4', 'D2-16,26', 'A3-5,20', '# The ball moves; you stay in your lane'],
+          ['A4>A3', 'D2-12,23', '# Out to the wing: room, because she stayed wide'],
+          ['D2*A3', '# Lost it…'],
+          [
+            'D2~9,30', 'A3-6,44', 'A4-15,35', 'A5-23,37', 'A6-34,35', 'A7-44,44',
+            '# Theirs: everyone back down her own lane'
+          ]
+        ]
+      },
+      signals: ['possession', 'conceding'], goesWith: ['shape-2-5-1', 'midfield-five-slide', 'forward-defender'], tags: ['spacing', 'positional', 'uses-your-shape'],
+      shapes: ['2-5-1']
+    },
+
     /* ---------------- small-sided games ---------------- */
 
     {
@@ -5010,6 +5232,59 @@
         ]
       },
       signals: ['possession', 'solo-goals'], goesWith: ['up-together-back-together', 'stay-in-your-zone'], tags: ['work-rate', 'uses-your-shape'],
+      shapes: ['2-5-1', '3-3-2', '3-2-3', '2-3-1', '3-2-1', '4-4-2', '4-3-3', '3-5-2', '1-2-1']
+    },
+
+    {
+      id: 'the-bubble', v: 1, name: 'The bubble', type: 'game',
+      summary: 'Whoever has the ball has a bubble round her. Her teammates stay out of it so there is a pass to make, and only one defender may go in.',
+      ages: [7, 12], level: 1, players: { min: 6, best: 10, max: 16 }, gk: 0, minutes: [12, 20], intensity: 2,
+      space: [30, 40], kit: { balls: 6, cones: 4, bibs: 8, minigoals: 2 },
+      setupMins: 2, adults: 1, indoor: true, groups: ['teams'], involvement: 3, competitive: true,
+      positions: OUTFIELD, skills: ['movement', 'passing', 'pressing', 'communication'], principles: ['support', 'width', 'pressure', 'cover', 'balance'],
+      moments: ['attack', 'defend'], physical: [],
+      setup: 'A small-sided game, 4v4 to 7v7, on a pitch about 30 × 40 yd with a mini goal at each end, in your match shape if the numbers allow. Show the bubble before you start: about five big steps all round whoever has the ball.',
+      how: [
+        'Play a normal game with one picture in everyone\'s head: the player on the ball is inside a bubble that moves with her.',
+        'Her teammates stay out of it. If one comes in, the coach calls "Bubble!" and the other team gets a free kick.',
+        'Only one defender may be in it. The one who goes calls "Mine!" If a second one goes in, the attacking team gets a free kick.',
+        'When the ball is passed, the bubble goes with it: a new player on the ball, a new bubble, and the nearest defender goes.'
+      ],
+      points: [
+        'With the ball: get out of her bubble, into a space where she can see you and pass to you.',
+        'Without it: one goes and calls "Mine!" The next one waits just outside the bubble, behind her, in case she is beaten.',
+        'Everyone else finds a player to mark or a gap to stand in. Chasing the ball is one player\'s job, not the team\'s.'
+      ],
+      questions: [
+        'Why was it easier to pass when nobody was inside her bubble?',
+        'If you are not the one who goes, what is the most useful thing you can do?'
+      ],
+      mistakes: [
+        'Calling every bubble from the first minute: call the first few, then let one or two go so the game flows.',
+        'Players stopping right on the edge of the bubble: out of it is the start. Keep going into a space the ball can reach.'
+      ],
+      why: 'Young teams bunch because everyone wants the ball, on both sides of it. One rule fixes both halves: teammates give the player on the ball room, so there is a pass to make, and only one defender goes to her, so the rest are left guarding the places the pass would go.',
+      easier: ['Only the defending rule to start: one defender in the bubble. Add the attacking rule once it sticks.', 'A bigger pitch and fewer players: 4v4.'],
+      harder: ['Shrink the bubble to three big steps: closer support is fine, crowding still is not.', 'The second defender must be in the cover spot, just outside the bubble behind the first, or it is a free kick.'],
+      diagram: {
+        area: [30, 40], mark: 'none',
+        cones: [[0, 0], [30, 0], [0, 40], [30, 40]],
+        goals: [[15, 0, 'mini', 's'], [15, 40, 'mini', 'n']],
+        zones: [[6, 21, 12, 12, 'BUBBLE']],
+        players: {
+          A1: [12, 27], A2: [14.5, 25], A3: [4, 15], A4: [24, 12],
+          D1: [11, 19], D2: [16, 19.5], D3: [7, 8], D4: [21, 6]
+        },
+        ball: 'A1',
+        frames: [
+          ['A2-23,21', 'D1-10.5,24.3', 'D2-15,17', '# Out of her bubble; only one defender goes in'],
+          ['A1>A2', '# Room round her, so there is a pass to make'],
+          ['D2-23,17.8', 'D1-17,13', 'A1-11,15', 'A4-25,7', '# New ball, new bubble: the nearest one goes'],
+          ['A2>A1', 'D3-9,11', '# Away from the ball, so she is free'],
+          ['A1>G', '# Score']
+        ]
+      },
+      signals: ['possession', 'shots-against'], goesWith: ['islands', 'spread-out-game', 'freeze-check'], tags: ['spacing', 'young', 'uses-your-shape'],
       shapes: ['2-5-1', '3-3-2', '3-2-3', '2-3-1', '3-2-1', '4-4-2', '4-3-3', '3-5-2', '1-2-1']
     },
 
@@ -6245,7 +6520,7 @@
       whenWeWin: 'The first pass forward or wide, quickly, before the other team recovers its shape.',
       whenWeLose: 'Drop and protect the middle. Delay the attacker until help arrives; don\'t dive in.',
       keySkills: ['1v1-defend', 'communication', 'heading', 'passing', 'long-passing', 'shape'],
-      drills: ['centre-back-partnership', 'back-line-shift', '2v2-pressure-cover', 'jockey-channel', 'numbers-down-defending', 'build-out-play', 'driven-passes'],
+      drills: ['centre-back-partnership', 'back-line-shift', 'two-backs-one-rope', '2v2-pressure-cover', 'jockey-channel', 'numbers-down-defending', 'build-out-play', 'driven-passes'],
       young: 'For under-tens there\'s no back line to hold, just "stay between the ball and our goal". Rotate who does it.',
       diagram: {
         area: [60, 44], mark: 'half', goals: [[30, 0, 'big', 's']],
@@ -6276,7 +6551,7 @@
       whenWeWin: 'Go. The winger you were marking is now behind you; the space down the wing is yours.',
       whenWeLose: 'Sprint back to your side of the back line first, then defend.',
       keySkills: ['1v1-defend', 'crossing', 'combination', 'movement', 'passing'],
-      drills: ['full-back-job', 'jockey-channel', 'overlap-2v1-wide', 'recovery-runs', 'back-line-shift', 'crossing-and-finishing'],
+      drills: ['full-back-job', 'jockey-channel', 'overlap-2v1-wide', 'recovery-runs', 'back-line-shift', 'two-backs-one-rope', 'crossing-and-finishing'],
       young: 'Under 10, teach it as "defend your side, then help attack your side". The overlap can wait.',
       diagram: {
         area: [60, 44], mark: 'half', goals: [[30, 0, 'big', 's']],
@@ -6308,7 +6583,7 @@
       whenWeWin: 'Make yourself the first option, and play it simple and quick.',
       whenWeLose: 'Stop the counter: delay the player on the ball and cover the middle.',
       keySkills: ['scanning', 'passing', 'long-passing', 'pressing', 'communication', 'shape'],
-      drills: ['holding-midfielder-screen', 'rondo-pivot', 'rondo-5v2', 'two-banks', 'shoulder-check-colours', 'five-second-press'],
+      drills: ['holding-midfielder-screen', 'forward-defender', 'rondo-pivot', 'rondo-5v2', 'two-banks', 'shoulder-check-colours', 'five-second-press'],
       young: 'Before 11v11 it\'s simply "someone stays in the middle behind the ball". Give the job to a different player each half.',
       diagram: {
         area: [60, 44], mark: 'half', goals: [[30, 0, 'big', 's']],
@@ -6340,7 +6615,7 @@
       whenWeWin: 'Be available straight away, then look forward.',
       whenWeLose: 'Press the ball for five seconds, or get back into shape. Never stand and watch.',
       keySkills: ['passing', 'movement', 'scanning', 'combination', 'pressing', 'decision-making'],
-      drills: ['midfield-triangle-rotation', 'passing-diamond', 'y-passing-pattern', 'keep-away-4v4-plus-2', 'five-second-press', 'open-up-and-turn'],
+      drills: ['midfield-triangle-rotation', 'five-lanes', 'passing-diamond', 'y-passing-pattern', 'keep-away-4v4-plus-2', 'five-second-press', 'open-up-and-turn'],
       young: 'This is the position that teaches the most football. Rotate everyone through it.',
       diagram: {
         area: [90, 56], mark: 'pitch', goals: [[0, 28, 'big', 'e'], [90, 28, 'big', 'w']],
@@ -6402,7 +6677,7 @@
       whenWeWin: 'Get wide and forward fast: you\'re the outlet.',
       whenWeLose: 'Sprint back down your wing. Your full-back is outnumbered until you arrive.',
       keySkills: ['crossing', 'dribbling', 'movement', 'pressing', 'shape'],
-      drills: ['stay-in-your-zone', 'wide-channel-game', 'overlap-2v1-wide', 'recovery-runs', 'crossing-and-finishing', 'four-goal-game'],
+      drills: ['stay-in-your-zone', 'five-lanes', 'wide-channel-game', 'overlap-2v1-wide', 'recovery-runs', 'crossing-and-finishing', 'four-goal-game'],
       young: 'Under 10, teach "stay wide" as a gift to your team: it makes the pitch big. The defending half comes later.',
       diagram: {
         area: [90, 56], mark: 'pitch', goals: [[0, 28, 'big', 'e'], [90, 28, 'big', 'w']],
@@ -6480,7 +6755,7 @@
     }
   ];
 
-  const LIB = { version: 5, TYPES, MOMENTS, SKILLS, PRINCIPLES, PHYSICAL, KIT, SHAPES, LEVELS, INTENSITY, GROUPS, INVOLVEMENT, POSITIONS: ALL, SIGNALS, DRILLS, ROLE_GUIDE };
+  const LIB = { version: 6, TYPES, MOMENTS, SKILLS, PRINCIPLES, PHYSICAL, KIT, SHAPES, LEVELS, INTENSITY, GROUPS, INVOLVEMENT, POSITIONS: ALL, SIGNALS, DRILLS, ROLE_GUIDE };
   if (typeof module !== 'undefined' && module.exports) module.exports = LIB;
   else root.SOCCER_DRILLS = LIB;
 })(typeof window !== 'undefined' ? window : globalThis);
