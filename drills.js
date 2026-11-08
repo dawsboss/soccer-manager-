@@ -149,6 +149,29 @@
     '4-4-2': '4-4-2 (11v11)', '4-3-3': '4-3-3 (11v11)', '3-5-2': '3-5-2 (11v11)'
   };
 
+  /* What a drill works on, in the words a coach uses for the problem in
+     front of her: "they bunch", "they kick it long", "they don't get back".
+     None of these is a skill or a game number, so neither the skill filter
+     nor what needs work can find them; a topic gathers the drills that answer
+     one, from every type, and the Drills screen offers each as a chip.
+     test/drills.js holds every topic to at least three drills. Add a drill to
+     a topic only when it is mainly about it: a chip that returns half the
+     library helps nobody. */
+  const TOPICS = {
+    spacing: {
+      label: 'Spacing',
+      means: 'For a team that bunches round the ball: where to stand with it and without it, and one player going to the ball rather than five.'
+    },
+    passing: {
+      label: 'Passing through',
+      means: 'For a team that kicks it long: passing on the ground through the gaps, and moving so a teammate can find you.'
+    },
+    'getting-back': {
+      label: 'Getting back',
+      means: 'For a team caught short when it loses the ball: the run back, and holding on until help arrives.'
+    }
+  };
+
   const LEVELS = { 1: 'Starting out', 2: 'Developing', 3: 'Advanced' };
   const INTENSITY = { 1: 'Easy', 2: 'Moderate', 3: 'Hard' };
 
@@ -900,7 +923,8 @@
         ]
       },
       signals: ['conceding', 'shots-against', 'late-goals'], goesWith: ['back-in-time', 'recovery-runs'], tags: ['tracking-back', 'no-ball'],
-      shapes: ['2-5-1', '3-3-2', '3-2-3', '2-3-1', '4-4-2', '4-3-3', '3-5-2', '1-2-1']
+      shapes: ['2-5-1', '3-3-2', '3-2-3', '2-3-1', '4-4-2', '4-3-3', '3-5-2', '1-2-1'],
+      topics: ['getting-back']
     },
 
     {
@@ -952,7 +976,8 @@
           ['A4>A1', 'A3-10,16', 'D1-13,10', '# Three in a row… five is a point']
         ]
       },
-      signals: ['possession'], goesWith: ['rondo-4v1', 'spread-out-game', 'the-bubble'], tags: ['young', 'fun', 'spacing']
+      signals: ['possession'], goesWith: ['rondo-4v1', 'spread-out-game', 'the-bubble'], tags: ['young', 'fun', 'spacing'],
+      topics: ['spacing']
     },
 
     /* ---------------- technique ---------------- */
@@ -1896,7 +1921,8 @@
           ['A2~14,1', '# She takes it in her stride']
         ]
       },
-      signals: ['solo-goals', 'possession'], goesWith: ['split-the-two', 'end-zone-game'], tags: ['through-balls']
+      signals: ['solo-goals', 'possession'], goesWith: ['split-the-two', 'end-zone-game'], tags: ['through-balls'],
+      topics: ['passing']
     },
 
     /* ---------------- opposed practice ---------------- */
@@ -2054,7 +2080,8 @@
           ['A2>G', '# Finish']
         ]
       },
-      signals: ['solo-goals', 'few-shots'], goesWith: ['3v2-waves', 'lay-off-and-shoot'], tags: []
+      signals: ['solo-goals', 'few-shots'], goesWith: ['3v2-waves', 'lay-off-and-shoot'], tags: [],
+      topics: ['passing']
     },
 
     {
@@ -2561,7 +2588,8 @@
           ['A3>A7', 'D3-33,6', 'D4-35,10', 'D1-17,6', 'D2-17,10', '# …then through the middle; two new defenders go']
         ]
       },
-      signals: ['possession', 'shots-against'], goesWith: ['rondo-5v2', 'four-goal-game'], tags: ['positional', 'possession']
+      signals: ['possession', 'shots-against'], goesWith: ['rondo-5v2', 'four-goal-game'], tags: ['positional', 'possession'],
+      topics: ['passing']
     },
 
     {
@@ -2738,7 +2766,8 @@
         ]
       },
       signals: ['conceding', 'shots-against', 'late-goals', 'fouls'], goesWith: ['jockey-channel', 'five-second-press'], tags: ['transition', 'defending'],
-      shapes: ['2-5-1', '3-3-2', '3-2-3', '2-3-1', '4-4-2', '4-3-3', '3-5-2']
+      shapes: ['2-5-1', '3-3-2', '3-2-3', '2-3-1', '4-4-2', '4-3-3', '3-5-2'],
+      topics: ['getting-back']
     },
 
     {
@@ -3045,7 +3074,8 @@
         ]
       },
       signals: ['conceding', 'shots-against', 'late-goals'], goesWith: ['wide-mirror', 'hold-until-help', 'winger-job'], tags: ['tracking-back'],
-      shapes: ['2-5-1', '3-3-2', '3-2-3', '2-3-1', '4-4-2', '4-3-3', '3-5-2', '1-2-1']
+      shapes: ['2-5-1', '3-3-2', '3-2-3', '2-3-1', '4-4-2', '4-3-3', '3-5-2', '1-2-1'],
+      topics: ['getting-back']
     },
 
     {
@@ -3090,7 +3120,8 @@
         ]
       },
       signals: ['conceding', 'shots-against'], goesWith: ['back-in-time', 'wide-mirror', 'full-back-job'], tags: ['tracking-back'],
-      shapes: ['2-5-1', '3-3-2', '3-2-3', '2-3-1', '4-4-2', '4-3-3', '3-5-2']
+      shapes: ['2-5-1', '3-3-2', '3-2-3', '2-3-1', '4-4-2', '4-3-3', '3-5-2'],
+      topics: ['getting-back']
     },
 
     {
@@ -3133,7 +3164,8 @@
         ]
       },
       signals: ['conceding', 'shots-against'], goesWith: ['back-in-time', 'numbers-down-defending', 'centre-back-partnership'], tags: ['defending', 'tracking-back'],
-      shapes: ['2-5-1', '2-3-1']
+      shapes: ['2-5-1', '2-3-1'],
+      topics: ['getting-back']
     },
 
     {
@@ -3182,7 +3214,8 @@
         ]
       },
       signals: ['late-goals', 'conceding', 'shots-against'], goesWith: ['up-together-back-together', 'five-second-press'], tags: ['tracking-back', 'work-rate'],
-      shapes: ['2-5-1', '3-3-2', '3-2-3', '2-3-1', '3-2-1', '4-4-2', '4-3-3', '3-5-2']
+      shapes: ['2-5-1', '3-3-2', '3-2-3', '2-3-1', '3-2-1', '4-4-2', '4-3-3', '3-5-2'],
+      topics: ['getting-back']
     },
 
     {
@@ -3228,7 +3261,8 @@
         ]
       },
       signals: ['late-goals', 'conceding'], goesWith: ['winger-job', 'crossing-and-finishing', 'back-in-time'], tags: ['tracking-back', 'fitness'],
-      shapes: ['2-5-1', '3-3-2', '3-2-3', '2-3-1', '4-4-2', '4-3-3', '3-5-2']
+      shapes: ['2-5-1', '3-3-2', '3-2-3', '2-3-1', '4-4-2', '4-3-3', '3-5-2'],
+      topics: ['getting-back']
     },
 
     {
@@ -3315,7 +3349,8 @@
           ['A2>A3', '# The pass past her is on']
         ]
       },
-      signals: ['possession'], goesWith: ['rondo-4v1', 'split-the-two'], tags: ['positioning']
+      signals: ['possession'], goesWith: ['rondo-4v1', 'split-the-two'], tags: ['positioning'],
+      topics: ['spacing', 'passing']
     },
 
     {
@@ -3360,7 +3395,8 @@
           ['A4-11,6', 'A1>11,6', '# Through the gap, on the ground']
         ]
       },
-      signals: ['possession', 'solo-goals', 'few-shots'], goesWith: ['lead-the-runner', 'end-zone-game'], tags: ['through-balls']
+      signals: ['possession', 'solo-goals', 'few-shots'], goesWith: ['lead-the-runner', 'end-zone-game'], tags: ['through-balls'],
+      topics: ['passing']
     },
 
     {
@@ -3404,7 +3440,8 @@
           ['A1~3,0.5', '# Stop it on the end line']
         ]
       },
-      signals: ['possession', 'solo-goals'], goesWith: ['2v1-to-goal', 'out-of-the-shadow'], tags: ['give-and-go']
+      signals: ['possession', 'solo-goals'], goesWith: ['2v1-to-goal', 'out-of-the-shadow'], tags: ['give-and-go'],
+      topics: ['passing']
     },
 
     /* ---------------- positions and units ---------------- */
@@ -3449,7 +3486,8 @@
           ['C~30,9', 'A1-22,6', 'A2-38,6', 'A3-20,15', 'A4-30,14', 'A5-40,15', 'A6-30,23', '# Ball near our goal: everyone tucks in']
         ]
       },
-      signals: ['conceding', 'possession'], goesWith: ['shadow-play', 'stay-in-your-zone'], tags: ['uses-your-shape', 'positional']
+      signals: ['conceding', 'possession'], goesWith: ['shadow-play', 'stay-in-your-zone'], tags: ['uses-your-shape', 'positional'],
+      topics: ['spacing']
     },
 
     {
@@ -3487,7 +3525,8 @@
           ['A2>G', '# …and it counts']
         ]
       },
-      signals: ['one-scorer'], goesWith: ['3v3-small-sided', 'everyone-plays-everywhere'], tags: ['young', 'fun', 'positional']
+      signals: ['one-scorer'], goesWith: ['3v3-small-sided', 'everyone-plays-everywhere'], tags: ['young', 'fun', 'positional'],
+      topics: ['spacing']
     },
 
     {
@@ -3562,7 +3601,8 @@
           ['A6>G', '# Score']
         ]
       },
-      signals: ['possession', 'conceding'], goesWith: ['know-your-position', 'wide-channel-game'], tags: ['uses-your-shape', 'positional']
+      signals: ['possession', 'conceding'], goesWith: ['know-your-position', 'wide-channel-game'], tags: ['uses-your-shape', 'positional'],
+      topics: ['spacing']
     },
 
     {
@@ -4033,7 +4073,8 @@
           ['A1>G', '# …and a goal from it counts double']
         ]
       },
-      signals: ['solo-goals', 'possession'], goesWith: ['spread-out-game', 'wide-channel-game'], tags: ['young', 'positional']
+      signals: ['solo-goals', 'possession'], goesWith: ['spread-out-game', 'wide-channel-game'], tags: ['young', 'positional'],
+      topics: ['spacing']
     },
 
     {
@@ -4084,7 +4125,8 @@
         ]
       },
       signals: ['conceding', 'shots-against'], goesWith: ['back-in-time', 'shadow-play', 'know-your-position'], tags: ['positional', 'uses-your-shape', 'tracking-back'],
-      shapes: ['2-5-1']
+      shapes: ['2-5-1'],
+      topics: ['spacing', 'getting-back']
     },
 
     {
@@ -4134,7 +4176,8 @@
         ]
       },
       signals: ['conceding', 'possession'], goesWith: ['two-banks', 'back-line-shift', 'know-your-position'], tags: ['positional', 'uses-your-shape'],
-      shapes: ['3-3-2']
+      shapes: ['3-3-2'],
+      topics: ['spacing']
     },
 
     {
@@ -4179,7 +4222,8 @@
         ]
       },
       signals: ['conceding', 'shots-against'], goesWith: ['spread-out-game', 'up-together-back-together', 'know-your-position'], tags: ['positional', 'uses-your-shape', 'young'],
-      shapes: ['2-3-1', '3-2-1']
+      shapes: ['2-3-1', '3-2-1'],
+      topics: ['spacing', 'getting-back']
     },
 
     {
@@ -4224,7 +4268,8 @@
         ]
       },
       signals: ['conceding', 'possession'], goesWith: ['two-banks', 'shape-2-5-1'], tags: ['positional', 'defending'],
-      shapes: ['2-5-1', '3-5-2']
+      shapes: ['2-5-1', '3-5-2'],
+      topics: ['spacing']
     },
 
     {
@@ -4331,7 +4376,8 @@
         ]
       },
       signals: ['conceding', 'shots-against'], goesWith: ['hold-until-help', 'forward-defender', 'shape-2-5-1'], tags: ['spacing', 'positional', 'defending'],
-      shapes: ['2-5-1', '2-3-1']
+      shapes: ['2-5-1', '2-3-1'],
+      topics: ['spacing']
     },
 
     {
@@ -4383,7 +4429,8 @@
         ]
       },
       signals: ['shots-against', 'conceding'], goesWith: ['two-backs-one-rope', 'five-lanes', 'holding-midfielder-screen'], tags: ['spacing', 'positional', 'defending'],
-      shapes: ['2-5-1', '2-3-1']
+      shapes: ['2-5-1', '2-3-1'],
+      topics: ['spacing']
     },
 
     {
@@ -4442,7 +4489,8 @@
         ]
       },
       signals: ['possession', 'conceding'], goesWith: ['shape-2-5-1', 'midfield-five-slide', 'forward-defender'], tags: ['spacing', 'positional', 'uses-your-shape'],
-      shapes: ['2-5-1']
+      shapes: ['2-5-1'],
+      topics: ['spacing', 'getting-back']
     },
 
     /* ---------------- small-sided games ---------------- */
@@ -4643,7 +4691,8 @@
           ['A4>G', '# Score']
         ]
       },
-      signals: ['possession', 'solo-goals'], goesWith: ['driven-passes', 'overlap-2v1-wide'], tags: []
+      signals: ['possession', 'solo-goals'], goesWith: ['driven-passes', 'overlap-2v1-wide'], tags: [],
+      topics: ['spacing']
     },
 
     {
@@ -4978,7 +5027,8 @@
           ['N2>N3', '# …to the far target: a point']
         ]
       },
-      signals: ['possession', 'solo-goals'], goesWith: ['three-zone-rondo', 'stay-in-your-zone'], tags: ['positional', 'possession']
+      signals: ['possession', 'solo-goals'], goesWith: ['three-zone-rondo', 'stay-in-your-zone'], tags: ['positional', 'possession'],
+      topics: ['spacing']
     },
 
     {
@@ -5188,7 +5238,8 @@
         ]
       },
       signals: ['late-goals', 'conceding', 'shots-against'], goesWith: ['last-one-back', 'freeze-check'], tags: ['work-rate', 'tracking-back', 'uses-your-shape'],
-      shapes: ['2-5-1', '3-3-2', '3-2-3', '2-3-1', '3-2-1', '4-4-2', '4-3-3', '3-5-2', '1-2-1']
+      shapes: ['2-5-1', '3-3-2', '3-2-3', '2-3-1', '3-2-1', '4-4-2', '4-3-3', '3-5-2', '1-2-1'],
+      topics: ['getting-back']
     },
 
     {
@@ -5232,7 +5283,8 @@
         ]
       },
       signals: ['possession', 'solo-goals'], goesWith: ['up-together-back-together', 'stay-in-your-zone'], tags: ['work-rate', 'uses-your-shape'],
-      shapes: ['2-5-1', '3-3-2', '3-2-3', '2-3-1', '3-2-1', '4-4-2', '4-3-3', '3-5-2', '1-2-1']
+      shapes: ['2-5-1', '3-3-2', '3-2-3', '2-3-1', '3-2-1', '4-4-2', '4-3-3', '3-5-2', '1-2-1'],
+      topics: ['spacing']
     },
 
     {
@@ -5285,7 +5337,8 @@
         ]
       },
       signals: ['possession', 'shots-against'], goesWith: ['islands', 'spread-out-game', 'freeze-check'], tags: ['spacing', 'young', 'uses-your-shape'],
-      shapes: ['2-5-1', '3-3-2', '3-2-3', '2-3-1', '3-2-1', '4-4-2', '4-3-3', '3-5-2', '1-2-1']
+      shapes: ['2-5-1', '3-3-2', '3-2-3', '2-3-1', '3-2-1', '4-4-2', '4-3-3', '3-5-2', '1-2-1'],
+      topics: ['spacing']
     },
 
     {
@@ -5329,7 +5382,8 @@
         ]
       },
       signals: ['solo-goals', 'one-scorer', 'possession'], goesWith: ['freeze-check', 'keep-away-4v4-plus-2'], tags: ['work-rate', 'fun'],
-      shapes: ['2-3-1', '3-2-1', '1-2-1']
+      shapes: ['2-3-1', '3-2-1', '1-2-1'],
+      topics: ['spacing']
     },
 
     {
@@ -5420,7 +5474,8 @@
           ['A4>G2', '# …and score']
         ]
       },
-      signals: ['possession', 'solo-goals'], goesWith: ['split-the-two', 'out-of-the-shadow'], tags: ['through-balls', 'positioning']
+      signals: ['possession', 'solo-goals'], goesWith: ['split-the-two', 'out-of-the-shadow'], tags: ['through-balls', 'positioning'],
+      topics: ['passing']
     },
 
     /* ---------------- set pieces ---------------- */
@@ -6755,7 +6810,7 @@
     }
   ];
 
-  const LIB = { version: 6, TYPES, MOMENTS, SKILLS, PRINCIPLES, PHYSICAL, KIT, SHAPES, LEVELS, INTENSITY, GROUPS, INVOLVEMENT, POSITIONS: ALL, SIGNALS, DRILLS, ROLE_GUIDE };
+  const LIB = { version: 6, TYPES, MOMENTS, SKILLS, PRINCIPLES, PHYSICAL, KIT, SHAPES, TOPICS, LEVELS, INTENSITY, GROUPS, INVOLVEMENT, POSITIONS: ALL, SIGNALS, DRILLS, ROLE_GUIDE };
   if (typeof module !== 'undefined' && module.exports) module.exports = LIB;
   else root.SOCCER_DRILLS = LIB;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -22,7 +22,7 @@ const FILE = path.join(__dirname, '..', 'drills.js');
 const DIAGRAM = path.join(__dirname, '..', 'drill-diagram.js');
 const LIB = require(FILE);
 const DD = require(DIAGRAM);
-const { DRILLS, TYPES, MOMENTS, SKILLS, PRINCIPLES, PHYSICAL, KIT, SHAPES, LEVELS, INTENSITY, GROUPS, INVOLVEMENT, POSITIONS, SIGNALS, ROLE_GUIDE } = LIB;
+const { DRILLS, TYPES, MOMENTS, SKILLS, PRINCIPLES, PHYSICAL, KIT, SHAPES, TOPICS, LEVELS, INTENSITY, GROUPS, INVOLVEMENT, POSITIONS, SIGNALS, ROLE_GUIDE } = LIB;
 const ids = new Set(DRILLS.map(d => d.id));
 
 /* Collect every problem, then report each kind once with the drills it hit.
@@ -97,6 +97,7 @@ for (const d of DRILLS) {
   if (!Array.isArray(d.tags) || d.tags.some(t => !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(t))) flag('tags', id);
   if (d.safety !== undefined && !text(d.safety)) flag('safety', id);
   if (d.shapes !== undefined && (!subset(d.shapes, SHAPES) || !d.shapes.length)) flag('shapes', id);
+  if (d.topics !== undefined && (!subset(d.topics, TOPICS) || !d.topics.length)) flag('topics', id);
 
   if (!(isInt(d.setupMins) && d.setupMins >= 0 && d.setupMins <= 15)) flag('setupMins', id);
   if (d.adults !== 1 && d.adults !== 2) flag('adults', id);
@@ -132,6 +133,7 @@ report('goesWith names real drills, never itself', 'goesWith');
 report('tags are lowercase-with-hyphens', 'tags');
 report('a safety note, where given, says something', 'safety');
 report('shapes, where given, are the app\'s own', 'shapes');
+report('topics, where given, come from TOPICS', 'topics');
 report('setup takes 0–15 minutes', 'setupMins');
 report('one adult or two', 'adults');
 report('indoor and competitive are yes or no', 'bools');
@@ -164,6 +166,21 @@ console.log('\n--- the shapes are the app\'s ---');
   /* The question that started this: wide players in a 2-5-1 who don't get back. */
   check('a 2-5-1 has its own drill', DRILLS.some(d => d.type === 'position' && JSON.stringify(d.shapes) === '["2-5-1"]'), true);
   check('…and drills for wide players getting back', DRILLS.filter(d => (d.shapes || []).includes('2-5-1') && d.positions.includes('Wing') && d.moments.includes('toDefend')).length >= 3, true);
+}
+
+console.log('\n--- the topics a coach picks from ---');
+{
+  /* A topic is a chip on the Drills screen. One that finds a drill or two is
+     a chip that looks broken, and one with no words under it says nothing
+     when it is picked. */
+  check('there are topics to pick', Object.keys(TOPICS || {}).length > 0, true);
+  const said = Object.entries(TOPICS || {}).filter(([, t]) => !(t && text(t.label) && text(t.means))).map(([k]) => k);
+  check('every topic has a label and says what it is for', said.join(', '), '');
+  const thin = Object.keys(TOPICS || {}).filter(k => DRILLS.filter(d => (d.topics || []).includes(k)).length < 3);
+  check('every topic has at least three drills', thin.join(', '), '');
+  /* The two asks that started it: a team that bunches, and one that kicks it long. */
+  check('the new spacing drills are under Spacing', ['islands', 'the-bubble', 'five-lanes', 'two-backs-one-rope', 'forward-defender'].filter(id => !(DRILLS.find(d => d.id === id).topics || []).includes('spacing')).join(', '), '');
+  check('the passing drills are under Passing through', ['lead-the-runner', 'out-of-the-shadow', 'split-the-two', 'pass-around-her', 'keep-it-on-the-grass'].filter(id => !(DRILLS.find(d => d.id === id).topics || []).includes('passing')).join(', '), '');
 }
 
 console.log('\n--- every drill has a picture, and it agrees with the card ---');

@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '197';
+const BUILD = '198';
 const BUILT = '2026-10-25';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -5892,7 +5892,7 @@ function importDrills(data, out) {
     for (const [k, label] of Object.entries(list)) { by[wk(k)] = k; by[wk(typeof label === 'object' ? label.label : label)] = k; }
     return by;
   };
-  const V = { skills: vocab(L.SKILLS), principles: vocab(L.PRINCIPLES), moments: vocab(L.MOMENTS), physical: vocab(L.PHYSICAL), signals: vocab(L.SIGNALS), type: vocab(L.TYPES) };
+  const V = { skills: vocab(L.SKILLS), principles: vocab(L.PRINCIPLES), moments: vocab(L.MOMENTS), physical: vocab(L.PHYSICAL), signals: vocab(L.SIGNALS), topics: vocab(L.TOPICS || {}), type: vocab(L.TYPES) };
   const POS = Object.fromEntries(L.POSITIONS.map(p => [importKey(p), p]));
   const listOf = v => (Array.isArray(v) ? v : String(v ?? '').split(/\r?\n|;|\|/)).map(x => String(x).trim()).filter(Boolean);
   const range = (v, lo, hi) => {
@@ -5918,7 +5918,7 @@ function importDrills(data, out) {
     }
     const ty = firstOf(x, 'type', 'kind');
     if (ty !== undefined) { const k = V.type[wk(ty)]; if (k) f.type = k; else out.warnings.push(`${label}: "${ty}" is not a type of drill here (${Object.values(L.TYPES).join(', ')}), so it was left out.`); }
-    for (const k of ['skills', 'principles', 'moments', 'physical', 'signals']) {
+    for (const k of ['skills', 'principles', 'moments', 'physical', 'signals', 'topics']) {
       const v = firstOf(x, k);
       if (v === undefined) continue;
       const words = listOf(Array.isArray(v) ? v : String(v).replace(/,/g, ';'));
@@ -13338,6 +13338,9 @@ function teamSetUp(t, ro) {
    trackers never see those. Before a club has an admin nothing is gated, the
    same as every other screen. */
 const drillLib = () => (typeof window !== 'undefined' && window.SOCCER_DRILLS && window.SOCCER_DRILLS.DRILLS) ? window.SOCCER_DRILLS : null;
+/* A topic the library knows, or null: a phone holding an older drills.js has
+   none, and a word from a newer one is nothing to draw. */
+const topicOf = (L, k) => (L && L.TOPICS && k && ownKey(L.TOPICS, k) ? L.TOPICS[k] : null);
 const drillDiagram = () => (typeof window !== 'undefined' && window.DrillDiagram && window.DrillDiagram.svg) ? window.DrillDiagram : null;
 /* A team helper too (AUTH.md, *Team helpers*: "they help with drills and with
    planning practices"), by her own clauses in the rules, never coachIndex. */
@@ -13379,7 +13382,7 @@ const uLabel = u => (u == null ? '' : u <= 19 ? 'U' + u : 'Adult');
    the screen state. Rebuilt from the blank on every read, so a filter saved by
    an older build that this one no longer knows can't break the list. */
 const PRACTICE_BLANK = () => ({
-  q: '', age: 'team', sort: 'session', sig: '', len: '', setup: '', players: '', comp: '', by: '', shape: '',
+  q: '', age: 'team', sort: 'session', sig: '', len: '', setup: '', players: '', comp: '', by: '', shape: '', topic: '',
   skill: '', principle: '', moment: '', physical: '',
   types: [], pos: [], levels: [], intens: [], inv: [], groups: [], flags: [], noKit: []
 });
@@ -13423,7 +13426,7 @@ const drillWords = new Map();
 const drillCacheKey = d => (d.key || d.id) + '@' + (d.v || 0) + '@' + (d.at || 0);
 function drillText(d, L) {
   const k = drillCacheKey(d);
-  if (!drillWords.has(k)) drillWords.set(k, [d.name, d.summary, d.setup, d.why, ...d.how, ...d.points, ...d.skills.map(s => L.SKILLS[s] || s), ...d.tags].join(' ').toLowerCase());
+  if (!drillWords.has(k)) drillWords.set(k, [d.name, d.summary, d.setup, d.why, ...d.how, ...d.points, ...d.skills.map(s => L.SKILLS[s] || s), ...(d.topics || []).map(t => topicOf(L, t) ? topicOf(L, t).label : t), ...d.tags].join(' ').toLowerCase());
   return drillWords.get(k);
 }
 function drillMatches(d, f, age, L) {
@@ -13431,6 +13434,7 @@ function drillMatches(d, f, age, L) {
   return (age == null || (d.ages[0] <= age && age <= d.ages[1]))
     && (!f.sig || d.signals.includes(f.sig))
     && (!f.shape || (d.shapes || []).includes(f.shape))
+    && (!f.topic || (d.topics || []).includes(f.topic))
     && (!f.types.length || f.types.includes(d.type))
     && (!f.pos.length || f.pos.some(p => d.positions.includes(p)))
     && (!f.len || d.minutes[0] <= Number(f.len))
@@ -13491,7 +13495,7 @@ function drillPool(L, shelf = practiceUi().shelf) {
    itself rather than behind the Filters button. */
 function practiceActive(f) {
   let n = 0;
-  for (const k of ['sig', 'shape', 'len', 'setup', 'players', 'comp', 'by', 'skill', 'principle', 'moment', 'physical']) if (f[k]) n++;
+  for (const k of ['sig', 'shape', 'topic', 'len', 'setup', 'players', 'comp', 'by', 'skill', 'principle', 'moment', 'physical']) if (f[k]) n++;
   for (const k of ['types', 'pos', 'levels', 'intens', 'inv', 'groups', 'flags', 'noKit']) n += f[k].length;
   return n;
 }
@@ -13538,6 +13542,7 @@ function practiceDrillsView(L) {
   const opt = (cur, [v, l]) => `<option value="${esc(v)}"${cur === v ? ' selected' : ''}>${esc(l)}</option>`;
   const n = practiceActive(f);
   const s = f.sig && L.SIGNALS[f.sig];
+  const tp = topicOf(L, f.topic);
   // a shape picked in Filters that the team doesn't play still gets its chip, so it can be turned off here
   const shapes = [...new Set([...teamShapes(t, L), ...(f.shape && L.SHAPES && ownKey(L.SHAPES, f.shape) ? [f.shape] : [])])];
   watchShelf('club'); watchShelf('mine');
@@ -13553,6 +13558,9 @@ function practiceDrillsView(L) {
       </div>
       ${u == null && f.age === 'team' && canEditTeam(ui.teamId) ? `<p class="muted" style="margin:8px 0 0">Give the team a birth year (Settings → This team → Name and crest) and the list starts at the right age.</p>` : ''}
       ${s ? `<div class="drillsignal"><b>${esc(s.label)}</b><span>${esc(s.means)}</span></div>` : ''}
+      ${L.TOPICS ? `<div class="chips" style="margin-top:8px" aria-label="Works on">${Object.entries(L.TOPICS).map(([k, x]) =>
+        `<button class="chip" type="button" data-act="dfpick" data-k="topic" data-v="${esc(f.topic === k ? '' : k)}" aria-pressed="${f.topic === k}">${esc(x.label)}</button>`).join('')}</div>` : ''}
+      ${tp ? `<div class="drillsignal"><b>${esc(tp.label)}</b><span>${esc(tp.means)}</span></div>` : ''}
       ${shapes.length ? `<div class="chips" style="margin-top:8px">${shapes.map(k =>
         `<button class="chip" type="button" data-act="dfpick" data-k="shape" data-v="${esc(f.shape === k ? '' : k)}" aria-pressed="${f.shape === k}">${esc(k)} drills</button>`).join('')}</div>` : ''}
     </div>
@@ -13656,6 +13664,7 @@ function sheetDrill(id, moving = !reducedMotion(), top = false) {
       <span>Bring <b>${esc(kit)}</b></span>
       ${d.positions.length ? `<span>For <b>${esc(d.positions.join(', '))}</b></span>` : ''}
       ${(d.shapes || []).length ? `<span>Shape <b>${esc(d.shapes.join(', '))}</b></span>` : ''}
+      ${(d.topics || []).some(t => topicOf(L, t)) ? `<span>Works on <b>${esc(d.topics.map(t => topicOf(L, t)).filter(Boolean).map(x => x.label).join(', '))}</b></span>` : ''}
     </div>
     ${acts.length ? `<div class="row" style="gap:8px;flex-wrap:wrap;margin:6px 0">${acts.map(([a, l]) =>
       `<button class="btn quiet sm${a === 'drilldel' ? ' danger' : ''}" data-act="${a}" data-id="${esc(key)}">${l}</button>`).join('')}</div>` : ''}
@@ -13836,6 +13845,7 @@ function sheetDrillFilters() {
   const n = practiceDrills(f).length;
   openSheet(`<h3>Filters</h3>
     ${lab('What needs work', sel('sig', 'Anything', Object.entries(L.SIGNALS).map(([k, s]) => [k, s.label])))}
+    ${L.TOPICS ? lab('Works on', sel('topic', 'Anything', Object.entries(L.TOPICS).map(([k, x]) => [k, x.label]))) : ''}
     ${L.SHAPES ? lab('Written for the shape', sel('shape', 'Any shape', Object.entries(L.SHAPES))) : ''}
     <p class="lbl">Type</p>${chips('types', L.TYPES)}
     <p class="lbl">Position</p>${chips('pos', Object.fromEntries(L.POSITIONS.map(x => [x, x])))}
@@ -14298,7 +14308,7 @@ function normDrill(raw, shelf, id) {
     skills: keys(raw.skills, L.SKILLS), principles: keys(raw.principles, L.PRINCIPLES), moments: keys(raw.moments, L.MOMENTS), physical: keys(raw.physical, L.PHYSICAL),
     setup: str(raw.setup, 1000), how: lines(raw.how), points: lines(raw.points), questions: lines(raw.questions), mistakes: lines(raw.mistakes),
     why: str(raw.why, 600), easier: lines(raw.easier), harder: lines(raw.harder), safety: str(raw.safety, 400),
-    signals: keys(raw.signals, L.SIGNALS), shapes: keys(raw.shapes, L.SHAPES || {}), goesWith: [], tags: [],
+    signals: keys(raw.signals, L.SIGNALS), shapes: keys(raw.shapes, L.SHAPES || {}), topics: keys(raw.topics, L.TOPICS || {}), goesWith: [], tags: [],
     diagram: base ? base.diagram : cleanDrawing(raw.diagram), pic: base ? pic : '', media, from: fr,
     edBy: str(raw.edBy, 60), edName: str(raw.edName, 60),
     by: str(raw.by, 60), byName: str(raw.byName, 60), team: str(raw.team, 60), at: Number(raw.at) || 0,
@@ -14454,8 +14464,8 @@ function shelfNote(shelf) {
 let drillDraft = null;            // { shelf, id, d: the card being written, keepPic }
 const DRAFT_TEXT = { deName: 'name', deSummary: 'summary', deSetup: 'setup', deWhy: 'why', deSafety: 'safety' };
 const DRAFT_LINES = { deHow: 'how', dePoints: 'points', deQuestions: 'questions', deMistakes: 'mistakes', deEasier: 'easier', deHarder: 'harder' };
-const DRAFT_CHIPS = { positions: null, skills: 'SKILLS', principles: 'PRINCIPLES', moments: 'MOMENTS', physical: 'PHYSICAL', groups: 'GROUPS', signals: 'SIGNALS', shapes: 'SHAPES' };
-const draftVocab = (L, k) => (k === 'positions' ? Object.fromEntries(L.POSITIONS.map(x => [x, x])) : k === 'signals' ? Object.fromEntries(Object.entries(L.SIGNALS).map(([s, v]) => [s, v.label])) : L[DRAFT_CHIPS[k]] || {});
+const DRAFT_CHIPS = { positions: null, skills: 'SKILLS', principles: 'PRINCIPLES', moments: 'MOMENTS', physical: 'PHYSICAL', groups: 'GROUPS', signals: 'SIGNALS', shapes: 'SHAPES', topics: 'TOPICS' };
+const draftVocab = (L, k) => (k === 'positions' ? Object.fromEntries(L.POSITIONS.map(x => [x, x])) : k === 'signals' || k === 'topics' ? Object.fromEntries(Object.entries(L[DRAFT_CHIPS[k]] || {}).map(([s, v]) => [s, v.label])) : L[DRAFT_CHIPS[k]] || {});
 
 function draftFrom(d) {
   const c = d ? cardOf(d) : { name: '', type: 'technical', ages: [8, 12], minutes: [10, 15], players: { min: 4, best: 12, max: 16 }, gk: 0, level: 2, intensity: 2, involvement: 2, adults: 1 };
@@ -14488,7 +14498,7 @@ function sheetDrillEditor(top = false) {
   const lab = (l, body) => `<label class="field"><span>${l}</span>${body}</label>`;
   const ages = Array.from({ length: 16 }, (_, i) => [i + 4, i + 4 === 19 ? 'U19 / adult' : 'U' + (i + 4)]);
   const area = (id, k, rows, ph) => lab(esc(ph), `<textarea id="${id}" rows="${rows}">${esc(arrOf(c[k]).join('\n'))}</textarea>`);
-  const chips = k => `<p class="lbl">${{ positions: 'For', skills: 'Skills', principles: 'Principles of play', moments: 'Moments', physical: 'Physical', groups: 'Grouped as', signals: 'Answers', shapes: 'Written for the shape' }[k]}</p>
+  const chips = k => `<p class="lbl">${{ positions: 'For', skills: 'Skills', principles: 'Principles of play', moments: 'Moments', physical: 'Physical', groups: 'Grouped as', signals: 'Answers', shapes: 'Written for the shape', topics: 'Works on' }[k]}</p>
     <div class="chips">${Object.entries(draftVocab(L, k)).map(([v, l]) => `<button class="chip" type="button" data-act="dedchip" data-k="${k}" data-v="${esc(v)}" aria-pressed="${arrOf(c[k]).includes(v)}">${esc(l)}</button>`).join('')}</div>`;
   const nums = (lo, hi) => Array.from({ length: hi - lo + 1 }, (_, i) => [lo + i, String(lo + i)]);
   const kitOpts = k => [['', 'None'], ...(k === 'balls' ? [['each', 'One each']] : []), ...[1, 2, 3, 4, 6, 8, 10, 12, 16, 20, 24].map(x => [x, String(x)])];
