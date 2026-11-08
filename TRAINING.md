@@ -5,7 +5,7 @@ rules have to be right first. Training adds the first new root node since
 invites. It's also the first data here that belongs to a *person* rather than to
 a club, so a mistake would be expensive to undo.
 
-Built so far (see *Build order*): the built-in drill library (`drills.js`, 141
+Built so far (see *Build order*): the built-in drill library (`drills.js`, 151
 drills, each with an animated diagram, and a guide to what each of nine
 positions is for), the renderer that draws those diagrams
 (`drill-diagram.js`), the Practice tab that shows them, a team's age,
@@ -103,6 +103,7 @@ a deletion leaves holes in it.
 | `positions` | The app's own five roles | "Something for my keepers" is the same lookup as a player's best position |
 | `shapes` | Optional: the app's preset formations it is written for (`2-5-1`, `3-3-2`…) | A team's saved shape keeps the preset's name, so "drills for our 2-5-1" is a chip on the Drills screen and a nudge in *Suggest a session*. A drill that works in any shape lists none |
 | `skills`, `principles`, `moments`, `physical` | What it trains, from fixed vocabularies | Filtering, and the AI's vocabulary later |
+| `topics` | Optional: what it works on, in a coach's words for the problem (`spacing`, `passing`, `getting-back`) | One-tap chips on the Drills screen. A team that bunches is not a skill or a game number, so nothing else finds those drills. Only drills mainly about the topic; at least three per topic |
 | `setup`, `how`, `points` | Lay it out, run it, coach it | What a parent volunteer reads at quarter to six |
 | `questions` | Guided-discovery questions | Players remember what they say better than what they are told |
 | `mistakes` | What goes wrong, and the fix | The thing a new coach most needs and most coaching books leave out |
@@ -133,7 +134,7 @@ something a U6 coach opens and finds empty.
 
 ### Built-in drills: drawn, and they move
 
-Every built-in drill has a diagram, and 139 of the 141 animate: players run, the
+Every built-in drill has a diagram, and 149 of the 151 animate: players run, the
 ball travels, and a caption says what each step is. The two that don't move
 (juggling and the cool-down circle) are layouts.
 

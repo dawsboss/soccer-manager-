@@ -226,6 +226,41 @@ console.log('\n--- every filter narrows, and clearing undoes them ---');
   check('a chip in the sheet redraws the sheet', /Kit you don/.test(sheet()) && /aria-pressed="false">Advanced/.test(sheet()), true);
 }
 
+console.log('\n--- what a drill works on ---');
+{
+  /* A coach asked for drills for a team that bunches, and another for one
+     that kicks it long. Neither is a skill or a game number, so they are
+     topics: a chip on the Drills screen itself, one tap away, not behind
+     Filters. */
+  as('jaz');
+  A.change({ pick: 'dfpick', k: 'age' }, 'any');
+  const all = A.practiceDrills().length;
+  A.ui.view = 'practice'; A.ui.practice.tab = 'drills'; A.render();
+  const screen = A.rendered();
+  check('every topic is a chip on the Drills screen', Object.values(L.TOPICS).every(t => screen.includes('>' + t.label + '</button>')), true);
+  A.click({ act: 'dfpick', k: 'topic', v: 'spacing' });
+  const got = A.practiceDrills();
+  check('Spacing narrows the list', got.length >= 3 && got.length < all, true);
+  check('…to drills about spacing', got.every(d => (d.topics || []).includes('spacing')), true);
+  check('…the new ones among them', ['islands', 'the-bubble', 'five-lanes'].every(id => got.some(d => d.id === id)), true);
+  A.render();
+  check('the chip shows it is on, and says what it is for', /aria-pressed="true">Spacing<\/button>/.test(A.rendered()) && A.rendered().includes(L.TOPICS.spacing.means), true);
+  check('it counts on the Filters button', A.practiceActive(A.ui.practice.f), 1);
+  A.click({ act: 'dfpick', k: 'topic', v: 'passing' });
+  check('Passing through finds the passing drills', ['lead-the-runner', 'split-the-two', 'keep-it-on-the-grass'].every(id => A.practiceDrills().some(d => d.id === id)), true);
+  A.click({ act: 'dfpick', k: 'topic', v: '' });
+  check('tapping it again takes it off', A.practiceDrills().length, all);
+  A.click({ act: 'drillfilters' });
+  check('the Filters sheet offers it too', /Works on/.test(sheet()) && sheet().includes('Getting back'), true);
+  A.closeSheet();
+  A.ui.practice.f.q = 'spacing';
+  check('searching the word finds them', A.practiceDrills().some(d => d.id === 'islands'), true);
+  A.click({ act: 'dfclear' });
+  A.click({ act: 'drill', id: 'islands' });
+  check('the drill card says what it works on', /Works on <b>Spacing<\/b>/.test(sheet()), true);
+  A.closeSheet();
+}
+
 console.log('\n--- drills for the team\'s own shape ---');
 {
   /* A coach playing a 2-5-1 asked for drills for it, and for her wide players
