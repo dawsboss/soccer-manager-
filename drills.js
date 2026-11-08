@@ -1803,6 +1803,50 @@
       signals: ['few-shots', 'one-scorer'], goesWith: ['through-the-gates', '4v4-mini-goals'], tags: ['young', 'fun', 'finishing']
     },
 
+    {
+      id: 'lead-the-runner', v: 1, name: 'Pass in front of her', type: 'technical',
+      summary: 'Pairs: one jogs forward, the other passes on the ground through a cone gate into the space ahead of her. The through ball, slowed down.',
+      ages: [8, 14], level: 1, players: { min: 2, best: 12, max: 20 }, gk: 0, minutes: [10, 15], intensity: 2,
+      space: [25, 20], kit: { balls: 6, cones: 12 },
+      setupMins: 3, adults: 1, indoor: true, groups: ['pairs'], involvement: 2, competitive: false,
+      positions: OUTFIELD, skills: ['passing', 'movement', 'first-touch'], principles: ['penetration', 'mobility'],
+      moments: ['attack'], physical: [],
+      setup: 'For each pair, a start cone for the passer, the runner 10 yd to her side, and a 3 yd gate of two cones about 7 yd ahead of the passer, between her and the runner\'s lane. Line the pairs up side by side.',
+      how: [
+        'The runner starts level with the passer and jogs up her lane.',
+        'The passer plays along the ground through the gate, into the space ahead of the runner, so she never has to stop or wait.',
+        'The runner takes it in her stride, dribbles to the end, turns, and they swap jobs coming back.',
+        'Then the runner sets off on her own, and the passer has to read when to play it.'
+      ],
+      points: [
+        'Pass to where she is going, not where she is.',
+        'Inside of the foot, on the grass, firm enough that it gets there first.',
+        'Runner: show with your hand where you want it, and keep running.',
+        'Look up before you pass. It is the runner who tells you when.'
+      ],
+      questions: ['Did she have to slow down or stretch for it?', 'Runner: how did you tell the passer when you wanted it?'],
+      mistakes: [
+        'Passing to the runner\'s feet, so she stops: point at the space beyond the gate.',
+        'Chipping it over the gate: a lifted ball bounces away from her. Keep the ankle locked and strike the middle of the ball.'
+      ],
+      why: 'A player who kicks it long and hopes usually hasn\'t found a pass she trusts. This gives her one, slowly and with nobody chasing, until playing it in front of a teammate feels easier than booting it.',
+      easier: ['A wider gate, and the runner walks.', 'The passer stands still and the runner starts closer.'],
+      harder: ['The runner curves her run, so the pass has to be timed.', 'Weaker foot only.', 'A defender jogs beside the runner, and the pass has to beat her.'],
+      diagram: {
+        area: [24, 20], mark: 'none',
+        cones: [[4, 18], [8, 9], [11, 9]],
+        lines: [[14, 19, 14, 1]],
+        players: { A1: [4, 16], A2: [14, 18] },
+        ball: 'A1',
+        frames: [
+          ['A2-14,12', '# She jogs up her lane'],
+          ['A2-14,4', 'A1>14,4', '# Through the gate, into space ahead of her'],
+          ['A2~14,1', '# She takes it in her stride']
+        ]
+      },
+      signals: ['solo-goals', 'possession'], goesWith: ['split-the-two', 'end-zone-game'], tags: ['through-balls']
+    },
+
     /* ---------------- opposed practice ---------------- */
 
     {
@@ -3177,6 +3221,138 @@
       },
       signals: ['few-shots', 'solo-goals'], goesWith: ['crossing-and-finishing', 'overlap-2v1-wide'], tags: ['finishing'],
       shapes: ['4-4-2', '4-3-3', '3-5-2', '3-2-3', '2-5-1']
+    },
+
+    {
+      id: 'out-of-the-shadow', v: 1, name: 'Out of her shadow', type: 'opposed',
+      summary: 'Three keep it from one in a small square. The two without the ball move until the defender is not between them and the ball, so the pass on the ground is always on.',
+      ages: [8, 14], level: 1, players: { min: 4, best: 12, max: 20 }, gk: 0, minutes: [10, 15], intensity: 2,
+      space: [12, 12], kit: { balls: 4, cones: 12, bibs: 4 },
+      setupMins: 3, adults: 1, indoor: true, groups: ['small'], involvement: 3, competitive: true,
+      positions: OUTFIELD, skills: ['passing', 'movement', 'scanning', 'decision-making'], principles: ['support', 'mobility'],
+      moments: ['attack', 'defend'], physical: ['agility'],
+      setup: 'Squares about 12 × 12 yd, one per group of four: three attackers on the edges, one defender inside.',
+      how: [
+        'The three keep the ball on the ground; the defender tries to touch it.',
+        'Attackers stay on the edges of the square, and may run along them.',
+        'Ten passes in a row is a point. A ball that goes over head height, or out, goes to the defender.',
+        'Swap the defender every minute, or whenever she wins it.'
+      ],
+      points: [
+        'If the defender is standing between you and the ball, you are in her shadow. Move until you can see the ball past her.',
+        'Make a triangle: one on each side of the ball, never two in a line.',
+        'Move before the ball arrives at your teammate, so the next pass is ready.',
+        'On the ball: if nobody is free, keep it and wait a second. Somebody will move.'
+      ],
+      questions: ['How did you know you were in her shadow?', 'What did you do when nobody was free?'],
+      mistakes: [
+        'Standing still on a corner and calling for it: freeze, show her the defender\'s shadow, and ask where she could stand instead.',
+        'Panicking and kicking it out of the square: the coach counts "one, two" aloud so she knows she has time.'
+      ],
+      why: 'Young players kick it long because nobody is free. Most of the time a teammate is two steps from being free, and this is where she learns to take them.',
+      easier: ['A bigger square.', 'The defender walks.', 'Four attackers against one.'],
+      harder: ['Two touches each.', 'A smaller square.', 'Four against two in a bigger square.'],
+      diagram: {
+        area: [12, 12], mark: 'grid', cones: [[0, 0], [12, 0], [0, 12], [12, 12]],
+        players: { A1: [0.5, 6], A2: [11.5, 6], A3: [6, 11.5], D1: [6, 6] },
+        ball: 'A1',
+        frames: [
+          ['A2-11.5,2', '# In her shadow? Move until you see the ball'],
+          ['A1>A2', 'D1-9,4', '# Now the pass is on'],
+          ['D1-A2', 'A3-9,11.5', 'A1-0.5,9', '# She presses: move to the free side'],
+          ['A2>A3', '# The pass past her is on']
+        ]
+      },
+      signals: ['possession'], goesWith: ['rondo-4v1', 'split-the-two'], tags: ['positioning']
+    },
+
+    {
+      id: 'split-the-two', v: 1, name: 'Split the two', type: 'opposed',
+      summary: 'Three move the ball across their zone until a gap opens between two defenders, then pass through it on the ground to a runner beyond them.',
+      ages: [9, 14], level: 2, players: { min: 6, best: 6, max: 12 }, gk: 0, minutes: [12, 18], intensity: 2,
+      space: [24, 30], kit: { balls: 8, cones: 12, bibs: 4 },
+      setupMins: 5, adults: 1, indoor: true, groups: ['small'], involvement: 2, competitive: true,
+      positions: OUTFIELD, skills: ['passing', 'movement', 'decision-making', 'scanning'], principles: ['penetration', 'width', 'support'],
+      moments: ['attack', 'defend'], physical: [],
+      setup: 'A 24 × 30 yd area cut into three zones of 10 yd. Three attackers in one end zone, two defenders in the middle zone, one attacker (the runner) in the far zone. A second group runs on a second area if there are more than six.',
+      how: [
+        'The three pass among themselves in their zone, along the ground, to move the defenders.',
+        'When a gap opens between the two, they pass through it to the runner. That is a point.',
+        'A ball over head height doesn\'t count. It has to go through them, not over them.',
+        'Defenders stay in the middle zone and try to cut the pass out. The runner plays it back and the next one starts.',
+        'Rotate every two minutes: two passers become defenders, a defender becomes the runner.'
+      ],
+      points: [
+        'Pass it across quickly. The defenders have to shift, and that is what opens the gap.',
+        'Look for the gap before the ball arrives, so you can play it first or second touch.',
+        'Runner: move along your zone into the line of the gap, and show for it.',
+        'Defending: shift together and keep the gap between you small.'
+      ],
+      questions: ['What made the gap open?', 'Runner: where did you move to when it opened?', 'Defenders: how far apart were you when it went through?'],
+      mistakes: [
+        'Forcing it through when there is no gap: count three passes first and the gap usually comes.',
+        'The runner standing behind a defender: she moves into the gap\'s line, not behind a red bib.'
+      ],
+      why: 'A through ball between two defenders is worth more than any clearance: everybody it goes past is out of the game. Practised with no keeper and no hurry, it becomes the pass a player looks for first on Saturday.',
+      easier: ['One defender in the middle.', 'A wider area.', 'The runner may come into the middle zone to meet it.'],
+      harder: ['Two touches in the end zone.', 'A third defender who starts in the runner\'s zone and marks her.', 'After the point, the runner dribbles at a mini goal.'],
+      diagram: {
+        area: [24, 30], mark: 'grid',
+        cones: [[0, 0], [24, 0], [0, 30], [24, 30], [0, 10], [24, 10], [0, 20], [24, 20]],
+        lines: [[0, 10, 24, 10], [0, 20, 24, 20]],
+        players: { A1: [4, 26], A2: [12, 27], A3: [20, 26], D1: [9, 15], D2: [15, 15], A4: [12, 5] },
+        ball: 'A2',
+        frames: [
+          ['A2>A3', 'D2-18,16', 'D1-12,15', '# Move it across; they follow'],
+          ['A3>A1', 'A2-12,23', 'D1-4.5,17', 'D2-12.5,15', '# And back again: watch the gap open'],
+          ['A4-11,6', 'A1>11,6', '# Through the gap, on the ground']
+        ]
+      },
+      signals: ['possession', 'solo-goals', 'few-shots'], goesWith: ['lead-the-runner', 'end-zone-game'], tags: ['through-balls']
+    },
+
+    {
+      id: 'pass-around-her', v: 1, name: 'Pass around her', type: 'opposed',
+      summary: 'Two against one in a channel, to an end line. Get past the defender with a pass and a run, a give-and-go, instead of dribbling into her or kicking it past.',
+      ages: [8, 14], level: 1, players: { min: 3, best: 12, max: 18 }, gk: 0, minutes: [10, 15], intensity: 2,
+      space: [12, 20], kit: { balls: 8, cones: 16, bibs: 4 },
+      setupMins: 4, adults: 1, indoor: true, groups: ['small'], involvement: 2, competitive: true,
+      positions: OUTFIELD, skills: ['combination', 'passing', 'movement', 'decision-making'], principles: ['support', 'penetration', 'mobility'],
+      moments: ['attack', 'defend'], physical: ['speed'],
+      setup: 'Channels about 12 × 20 yd side by side, one per group of three. Two attackers start on one end line, a defender halfway up. The far end line is the goal.',
+      how: [
+        'The attacker on the ball dribbles at the defender; her partner stays wide and a little ahead.',
+        'When the defender comes to her, she passes to her partner and sprints past the defender on the side away from the ball.',
+        'Her partner plays it straight back into the space behind the defender, and she runs onto it.',
+        'Stopping the ball on the far end line is a point. Swap jobs after every go.'
+      ],
+      points: [
+        'Draw the defender to you first. A pass too early lets her stay in the middle.',
+        'Partner: get to her side, not behind her, so the defender can\'t stop both of you.',
+        'Pass and go straight away: the run is what beats her.',
+        'The pass back goes into space behind the defender, not to the runner\'s feet.'
+      ],
+      questions: ['When did you let it go?', 'Partner: where did you stand so she could find you?'],
+      mistakes: [
+        'The partner standing behind the passer, so the pass goes backwards: she stands level or ahead, wide.',
+        'Passing and watching: shout "go!" the moment the pass leaves her foot.'
+      ],
+      why: 'When a defender comes at a young player she either loses it or kicks it anywhere. Two passes and a run take the defender out of the game, and once a team trusts that, it stops panicking.',
+      easier: ['The defender only walks.', 'The partner is a coach who always plays it back.'],
+      harder: ['The defender may go either way, so the attackers choose: dribble, pass and go, or pass and stay.', 'Two against two, with a second defender behind.'],
+      diagram: {
+        area: [12, 20], mark: 'grid',
+        cones: [[0, 0], [12, 0], [0, 20], [12, 20]],
+        players: { A1: [4, 19], A2: [10, 17], D1: [6, 10] },
+        ball: 'A1',
+        frames: [
+          ['A1~4,13', 'D1-A1', 'A2-10,12', '# Dribble at her and draw her in'],
+          ['A1>A2', 'A2-10,10', 'D1-7,11', '# Pass to your partner; she turns to look…'],
+          ['A1-3,4', 'A2>3,4', '# …run past her, and it comes back in behind'],
+          ['A1~3,0.5', '# Stop it on the end line']
+        ]
+      },
+      signals: ['possession', 'solo-goals'], goesWith: ['2v1-to-goal', 'out-of-the-shadow'], tags: ['give-and-go']
     },
 
     /* ---------------- positions and units ---------------- */
@@ -4923,6 +5099,53 @@
         ]
       },
       signals: ['possession'], goesWith: ['3v3-small-sided', 'ball-mastery-box'], tags: ['indoor', 'winter']
+    },
+
+    {
+      id: 'keep-it-on-the-grass', v: 1, name: 'Keep it on the grass', type: 'game',
+      summary: 'A small-sided game where a ball over head height goes to the other team, and a goal after a pass through two defenders counts double.',
+      ages: [8, 14], level: 1, players: { min: 8, best: 10, max: 14 }, gk: 0, minutes: [15, 20], intensity: 3,
+      space: [40, 30], kit: { balls: 8, cones: 8, bibs: 7, minigoals: 2 },
+      setupMins: 4, adults: 1, indoor: true, groups: ['teams'], involvement: 3, competitive: true,
+      positions: OUTFIELD, skills: ['passing', 'movement', 'decision-making', 'first-touch'], principles: ['support', 'penetration', 'width'],
+      moments: ['attack', 'defend'], physical: ['endurance'],
+      setup: 'A 40 × 30 yd pitch with a mini goal at each end. 4v4 or 5v5, no keepers.',
+      how: [
+        'Play a normal game, with one rule: a ball that goes over head height is a free kick to the other team, where it went up.',
+        'A goal is one point. A goal straight after a pass that went between two defenders on the ground is two.',
+        'Every three minutes, stop and ask who found a pass through.'
+      ],
+      points: [
+        'If the pass isn\'t on, keep it and look again. Kicking it away is never the only choice.',
+        'Without the ball: move into a space where the passer can see you past a defender.',
+        'Spread out, so there are gaps between their players to pass through.',
+        'Firm and on the grass. A soft pass is cut out, a lifted one is lost.'
+      ],
+      questions: ['When did you want to kick it away? What else could you have done?', 'Who made a pass through two of theirs?'],
+      mistakes: [
+        'Everyone chasing the ball, so there is nobody to pass to: freeze play, and have each player take three steps into space.',
+        'Defending only the ball: players learn quickly to stand in the gaps, so praise that too.'
+      ],
+      why: 'Kids kick it long because it feels safe. In this game it is the one thing that loses the ball, and the pass through the middle is worth double, so the habit turns round in a few weeks.',
+      easier: ['Waist height instead of head height for the free kick, so only big kicks are lost.', 'A neutral player who plays for whoever has the ball.'],
+      harder: ['Three passes before a goal counts.', 'A goal only from a pass played into a runner.'],
+      diagram: {
+        area: [40, 30], mark: 'grid',
+        cones: [[0, 0], [40, 0], [0, 30], [40, 30]],
+        goals: [[0, 15, 'mini', 'e'], [40, 15, 'mini', 'w']],
+        players: {
+          A1: [10, 15], A2: [16, 6], A3: [17, 24], A4: [24, 14],
+          D1: [22, 9], D2: [22, 20], D3: [33, 22], D4: [14, 15]
+        },
+        ball: 'A1',
+        frames: [
+          ['A1>A2', 'D1-19,8', 'D4-13,11', '# Keep it on the grass'],
+          ['A4-28,16', 'A2>28,16', 'D2-23,18', '# Between two of theirs: worth double'],
+          ['A4~34,14', 'D3-35,18', '# Take it on…'],
+          ['A4>G2', '# …and score']
+        ]
+      },
+      signals: ['possession', 'solo-goals'], goesWith: ['split-the-two', 'out-of-the-shadow'], tags: ['through-balls', 'positioning']
     },
 
     /* ---------------- set pieces ---------------- */
